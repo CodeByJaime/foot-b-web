@@ -7,19 +7,18 @@ import {
   Calendar,
   BarChart3,
   GitBranch,
-  Settings,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-  { icon: Trophy, label: 'Torneos', path: '/tournaments' },
-  { icon: Users, label: 'Equipos', path: '/teams' },
-  { icon: UserCircle, label: 'Jugadores', path: '/players' },
-  { icon: Calendar, label: 'Partidos', path: '/matches' },
-  { icon: BarChart3, label: 'Estadísticas', path: '/standings/1' },
-  { icon: GitBranch, label: 'Brackets', path: '/brackets/1' },
+  { icon: LayoutDashboard, label: 'Panel',    path: '/dashboard'    },
+  { icon: Trophy,          label: 'Torneos',      path: '/tournaments'  },
+  { icon: Users,           label: 'Equipos',      path: '/teams'        },
+  { icon: UserCircle,      label: 'Jugadores',    path: '/players'      },
+  { icon: Calendar,        label: 'Partidos',     path: '/matches'      },
+  { icon: BarChart3,       label: 'Estadísticas', path: '/standings/1'  },
+  { icon: GitBranch,       label: 'Brackets',     path: '/brackets/1'   },
 ];
 
 export default function Sidebar() {
@@ -27,44 +26,68 @@ export default function Sidebar() {
   const { user, signOut } = useAuth();
 
   return (
-    <aside className="w-64 h-screen sticky top-0 hidden md:flex flex-col overflow-hidden" style={{ background: 'var(--sidebar)', borderRight: '1px solid var(--sidebar-border)' }}>
+    <aside
+      className="w-64 h-screen sticky top-0 hidden md:flex flex-col overflow-hidden"
+      style={{
+        background: '#080c14',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif",
+      }}
+    >
 
-      {/* Gradient header — mirrors the mobile drawer header */}
-      <div
-        className="px-5 py-6 flex flex-col gap-4 relative overflow-hidden"
-        style={{ background: 'linear-gradient(160deg, var(--sidebar-header-from) 0%, var(--sidebar-header-via) 50%, var(--sidebar-header-to) 100%)' }}
-      >
-        {/* Decorative circles (same as mobile) */}
-        <div className="absolute top-0 right-0 w-28 h-28 rounded-full -translate-y-1/2 translate-x-1/2" style={{ background: 'rgba(255,255,255,0.06)' }} />
-        <div className="absolute bottom-0 left-0 w-20 h-20 rounded-full translate-y-1/2 -translate-x-1/2" style={{ background: 'rgba(255,255,255,0.04)' }} />
+      {/* ─── HEADER ─────────────────────────────────────────── */}
+      <div style={{
+        position: 'relative',
+        padding: '24px 20px',
+        background: 'linear-gradient(160deg, #052e16 0%, #14532d 45%, #166534 75%, #15803d 100%)',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative circles */}
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', transform: 'translate(40%,-40%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', transform: 'translate(-40%,40%)', pointerEvents: 'none' }} />
 
-        {/* Logo */}
-        <div className="flex items-center gap-2 relative z-10">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.18)' }}>
-            
-          </div>
-          <span className="text-white font-bold text-lg tracking-tight">Foot-B</span>
+        {/* Cancha decorativa */}
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.08, pointerEvents: 'none' }}>
+          <svg width="100%" height="100%" viewBox="0 0 256 130" preserveAspectRatio="xMidYMid slice">
+            <line x1="128" y1="0" x2="128" y2="130" stroke="white" strokeWidth="1.5"/>
+            <circle cx="128" cy="65" r="38" fill="none" stroke="white" strokeWidth="1.5"/>
+            <circle cx="128" cy="65" r="3" fill="white"/>
+          </svg>
         </div>
 
-        {/* User avatar & info */}
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-            style={{ background: 'rgba(255,255,255,0.22)', border: '2px solid rgba(255,255,255,0.3)' }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Trophy size={18} color="#fff" />
+          </div>
+          <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.5px', color: '#fff', textTransform: 'uppercase' }}>
+            FOOT<span style={{ color: '#86efac' }}>B</span>
+          </span>
+        </div>
+
+        {/* User card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative', zIndex: 2, background: 'rgba(0,0,0,0.18)', borderRadius: 14, padding: '10px 14px', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
             {user?.email?.[0]?.toUpperCase() ?? 'U'}
           </div>
-          <div className="min-w-0">
-            <p className="text-white text-sm font-semibold truncate leading-tight">
+          <div style={{ minWidth: 0 }}>
+            <p style={{ color: '#fff', fontSize: 14, fontWeight: 800, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.email?.split('@')[0] ?? 'Usuario'}
             </p>
-            <p className="text-xs truncate leading-tight" style={{ color: 'rgba(255,255,255,0.65)' }}>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Barlow', sans-serif", letterSpacing: 0.3 }}>
               {user?.email ?? 'Organizador'}
             </p>
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+      {/* ─── SECTION LABEL ──────────────────────────────────── */}
+      <div style={{ padding: '18px 20px 8px', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.2)', letterSpacing: 2, textTransform: 'uppercase' }}>
+        Navegación
+      </div>
+
+      {/* ─── NAV ────────────────────────────────────────────── */}
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -75,68 +98,62 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all relative group"
-              style={
-                isActive
-                  ? {
-                      background: 'var(--primary-light)',
-                      color: 'var(--primary)',
-                    }
-                  : {
-                      color: 'var(--muted-foreground)',
-                    }
-              }
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 12px',
+                borderRadius: 12,
+                textDecoration: 'none',
+                position: 'relative',
+                transition: 'transform 0.2s ease, background 0.2s ease',
+                background: isActive ? 'rgba(22,163,74,0.12)' : 'transparent',
+                border: `1px solid ${isActive ? 'rgba(22,163,74,0.25)' : 'transparent'}`,
+                color: isActive ? '#22c55e' : 'rgba(255,255,255,0.45)',
+              }}
             >
               {/* Active left bar */}
               {isActive && (
-                <span
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full"
-                  style={{ height: '60%', background: 'var(--primary)' }}
-                />
+                <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: '60%', borderRadius: '0 4px 4px 0', background: '#22c55e' }} />
               )}
 
-              <span
-                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
-                style={
-                  isActive
-                    ? { background: 'var(--primary)', color: '#fff' }
-                    : { background: 'var(--surface-high)', color: 'var(--muted-foreground)' }
-                }
-              >
-                <Icon className="h-4 w-4" />
+              {/* Icon */}
+              <span style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                background: isActive ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'rgba(255,255,255,0.05)',
+                border: isActive ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
+                transition: 'all 0.2s ease',
+              }}>
+                <Icon size={15} />
               </span>
 
-              <span className="text-sm font-semibold">{item.label}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                {item.label}
+              </span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-3 pb-5 space-y-0.5" style={{ borderTop: '1px solid var(--border)' }}>
-        <div className="pt-3">
-          <Link
-            to="/settings"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
-            style={{ color: 'var(--muted-foreground)' }}
-          >
-            <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--surface-high)' }}>
-              <Settings className="h-4 w-4" />
-            </span>
-            <span className="text-sm font-semibold">Configuración</span>
-          </Link>
-
-          <button
-            onClick={() => signOut?.()}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
-            style={{ color: 'var(--destructive)' }}
-          >
-            <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--destructive-light)' }}>
-              <LogOut className="h-4 w-4" />
-            </span>
-            <span className="text-sm font-semibold">Cerrar sesión</span>
-          </button>
-        </div>
+      {/* ─── FOOTER ─────────────────────────────────────────── */}
+      <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <Link
+          to="/"
+          onClick={() => signOut?.()}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'transparent', border: 'none', cursor: 'pointer', color: '#f87171', transition: 'all 0.2s ease' }}
+        >
+          <span style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)', flexShrink: 0 }}>
+            <LogOut size={15} />
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Cerrar sesión</span>
+        </Link>
       </div>
     </aside>
   );

@@ -80,7 +80,7 @@ export default function LandingPage() {
         <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
           <a href="#features" className="nav-link">Características</a>
           <a href="#how-it-works" className="nav-link">Cómo funciona</a>
-          <Link to="/dashboard"
+          <Link to="/auth"
             style={{ padding: '8px 20px', borderRadius: 8, background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, letterSpacing: 0.5, textDecoration: 'none', fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
             Empezar gratis
           </Link>

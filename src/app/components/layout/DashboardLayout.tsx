@@ -1,5 +1,4 @@
 import { ReactNode } from 'react';
-import Navbar from './Navbar';
 import Sidebar from './Sidebar';
 
 interface DashboardLayoutProps {
@@ -9,7 +8,6 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <Navbar isDashboard />
       <div className="flex">
         <Sidebar />
         <main className="flex-1 overflow-x-hidden">

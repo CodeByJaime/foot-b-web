@@ -1,10 +1,80 @@
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import { Trophy, Users, Calendar, TrendingUp, Plus, ArrowRight, Clock, MapPin } from 'lucide-react';
+import { Trophy, Users, Calendar, TrendingUp, ArrowRight, MapPin, Zap } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+
+interface CommunityStats {
+  municipalityName: string;
+  torneos: number;
+  equipos: number;
+  jugadores: number;
+}
 
 export default function Dashboard() {
   const { tournaments, teams, matches, loading } = useData();
+  const { user } = useAuth();
+  const [community, setCommunity] = useState<CommunityStats | null>(null);
+  const [loadingCommunity, setLoadingCommunity] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) { setLoadingCommunity(false); return; }
+
+    const fetchCommunity = async () => {
+      setLoadingCommunity(true);
+      try {
+        const { data: profile } = await supabase
+          .from('PROFILE')
+          .select('ubication_id')
+          .eq('auth_id', user.id)
+          .single();
+
+        if (!profile?.ubication_id) return;
+
+        const { data: ubication } = await supabase
+          .from('UBICATION')
+          .select('municipality_id')
+          .eq('id', profile.ubication_id)
+          .single();
+
+        if (!ubication?.municipality_id) return;
+
+        const { data: municipality } = await supabase
+          .from('MUNICIPALITY')
+          .select('name')
+          .eq('id', ubication.municipality_id)
+          .single();
+
+        const { data: ubicaciones } = await supabase
+          .from('UBICATION')
+          .select('id')
+          .eq('municipality_id', ubication.municipality_id);
+
+        const ids = ubicaciones?.map(u => u.id) ?? [];
+
+        const [torneosRes, equiposRes, jugadoresRes] = await Promise.all([
+          supabase.from('TORNEO').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+          supabase.from('TEAM').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+          supabase.from('PROFILE').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+        ]);
+
+        setCommunity({
+          municipalityName: municipality?.name ?? 'tu municipio',
+          torneos: torneosRes.count ?? 0,
+          equipos: equiposRes.count ?? 0,
+          jugadores: jugadoresRes.count ?? 0,
+        });
+      } catch {
+        // silently ignore
+      } finally {
+        setLoadingCommunity(false);
+      }
+    };
+
+    fetchCommunity();
+  }, [user?.id]);
 
   const stats = [
     {
@@ -12,61 +82,66 @@ export default function Dashboard() {
       value: tournaments.filter(t => t.status === 'ongoing').length,
       icon: Trophy,
       trend: '+12%',
-      iconBg: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-      glowColor: 'rgba(37,99,235,0.18)',
-      trendColor: '#16a34a',
-      trendBg: '#dcfce7',
+      color: '#2563eb',
+      bg: 'rgba(37,99,235,0.12)',
+      iconGradient: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
     },
     {
       title: 'Equipos totales',
       value: teams.length,
       icon: Users,
       trend: '+8%',
-      iconBg: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
-      glowColor: 'rgba(8,145,178,0.15)',
-      trendColor: '#16a34a',
-      trendBg: '#dcfce7',
+      color: '#0891b2',
+      bg: 'rgba(8,145,178,0.12)',
+      iconGradient: 'linear-gradient(135deg, #0891b2, #0e7490)',
     },
     {
       title: 'Partidos jugados',
       value: matches.filter(m => m.status === 'finished').length,
       icon: Calendar,
       trend: '+25%',
-      iconBg: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-      glowColor: 'rgba(139,92,246,0.15)',
-      trendColor: '#16a34a',
-      trendBg: '#dcfce7',
+      color: '#8b5cf6',
+      bg: 'rgba(139,92,246,0.12)',
+      iconGradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
     },
     {
       title: 'Próximos partidos',
       value: matches.filter(m => m.status === 'scheduled').length,
       icon: TrendingUp,
       trend: '+5%',
-      iconBg: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-      glowColor: 'rgba(217,119,6,0.15)',
-      trendColor: '#16a34a',
-      trendBg: '#dcfce7',
+      color: '#d97706',
+      bg: 'rgba(217,119,6,0.12)',
+      iconGradient: 'linear-gradient(135deg, #d97706, #b45309)',
     },
   ];
 
-  const upcomingMatches = matches.filter(m => m.status === 'scheduled' || m.status === 'live');
   const recentActivity = [
-    { type: 'match', text: 'Partido finalizado: Deportivo Estrella 2 - 1 FC Águilas', time: '2 horas' },
-    { type: 'team', text: 'Nuevo equipo registrado: Tigres Unidos', time: '5 horas' },
-    { type: 'tournament', text: 'Torneo creado: Copa de Verano', time: '1 día' },
+    { type: 'match',      text: 'Partido finalizado: Deportivo Estrella 2 - 1 FC Águilas', time: '2 horas' },
+    { type: 'team',       text: 'Nuevo equipo registrado: Tigres Unidos',                  time: '5 horas' },
+    { type: 'tournament', text: 'Torneo creado: Copa de Verano',                           time: '1 día'   },
   ];
+
+  const activityIcons: Record<string, typeof Calendar> = {
+    match: Calendar,
+    team: Users,
+    tournament: Trophy,
+  };
+
+  const activityColors: Record<string, string> = {
+    match:      '#8b5cf6',
+    team:       '#0891b2',
+    tournament: '#22c55e',
+  };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="p-6 flex items-center justify-center min-h-[400px]">
-          <div className="flex flex-col items-center gap-3">
-            <div
-              className="h-10 w-10 rounded-full border-4 border-t-transparent animate-spin"
-              style={{ borderColor: 'var(--primary)', borderTopColor: 'transparent' }}
-            />
-            <p style={{ color: 'var(--muted-foreground)' }} className="text-sm">Cargando datos...</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid rgba(34,197,94,0.2)', borderTopColor: '#22c55e', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, fontFamily: "'Barlow', sans-serif" }}>Cargando datos...</p>
           </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </DashboardLayout>
     );
@@ -74,254 +149,194 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
-        {/* Hero banner — gradient like mobile drawer header */}
-        <div
-          className="rounded-2xl p-6 relative overflow-hidden flex flex-col md:flex-row md:items-center md:justify-between gap-4"
-          style={{ background: 'linear-gradient(160deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%)' }}
-        >
-          {/* Decorative circles */}
-          <div className="absolute top-0 right-0 w-48 h-48 rounded-full -translate-y-1/2 translate-x-1/4" style={{ background: 'rgba(255,255,255,0.06)' }} />
-          <div className="absolute bottom-0 left-1/3 w-32 h-32 rounded-full translate-y-1/2" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
+          @keyframes spin { to { transform: rotate(360deg); } }
+          .dash-card { transition: transform 0.2s ease; }
+          .dash-card:hover { transform: translateY(-2px); }
+          .tournament-link:hover { transform: translateY(-3px); }
+          .tournament-link { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        `}</style>
 
-          <div className="relative z-10">
-            <h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1>
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.7)' }}>
-              Bienvenido de vuelta — aquí está tu resumen
-            </p>
+        {/* ─── HERO ───────────────────────────────────────────── */}
+        <div style={{ borderRadius: 20, padding: '32px 28px', position: 'relative', overflow: 'hidden', background: 'linear-gradient(160deg, #052e16 0%, #14532d 45%, #166534 75%, #15803d 100%)' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', transform: 'translate(30%,-50%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', bottom: 0, left: '30%', width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', transform: 'translateY(50%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', inset: 0, opacity: 0.07, pointerEvents: 'none' }}>
+            <svg width="100%" height="100%" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid slice">
+              <circle cx="450" cy="100" r="70" fill="none" stroke="white" strokeWidth="2"/>
+              <line x1="450" y1="0" x2="450" y2="200" stroke="white" strokeWidth="2"/>
+              <rect x="10" y="10" width="880" height="180" rx="6" fill="none" stroke="white" strokeWidth="2"/>
+            </svg>
           </div>
 
-          <Link
-            to="/tournaments"
-            className="relative z-10 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 self-start md:self-auto"
-            style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', backdropFilter: 'blur(8px)' }}
-          >
-            <Plus className="h-4 w-4" />
-            Crear torneo
-          </Link>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Panel de control</div>
+            <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 900, color: '#fff', letterSpacing: -1, lineHeight: 1, marginBottom: 8 }}>
+              BIENVENIDO DE<br/><span style={{ color: '#86efac' }}>VUELTA</span>
+            </h1>
+            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', fontFamily: "'Barlow', sans-serif", fontWeight: 400 }}>
+              Aquí está el resumen de tu actividad
+            </p>
+          </div>
         </div>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat, index) => {
+        {/* ─── STAT CARDS ─────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+          {stats.map((stat, i) => {
             const Icon = stat.icon;
             return (
-              <div
-                key={index}
-                className="rounded-2xl p-5 flex flex-col gap-3 transition-all"
-                style={{
-                  background: 'var(--card)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{ background: stat.iconBg, boxShadow: `0 3px 10px ${stat.glowColor}` }}
-                  >
-                    <Icon className="h-5 w-5 text-white" />
+              <div key={i} className="dash-card" style={{ padding: '22px', borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${stat.color}, transparent)` }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, background: stat.iconGradient, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 14px ${stat.bg}` }}>
+                    <Icon size={18} color="#fff" />
                   </div>
-                  <span
-                    className="text-xs font-bold px-2 py-1 rounded-full"
-                    style={{ background: stat.trendBg, color: stat.trendColor }}
-                  >
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', letterSpacing: 0.5 }}>
                     {stat.trend}
                   </span>
                 </div>
-                <div>
-                  <p className="text-3xl font-bold" style={{ color: 'var(--foreground)' }}>{stat.value}</p>
-                  <p className="text-xs font-medium mt-0.5" style={{ color: 'var(--muted-foreground)' }}>{stat.title}</p>
-                </div>
+                <p style={{ fontSize: 36, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>{stat.value}</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>{stat.title}</p>
               </div>
             );
           })}
         </div>
 
-        {/* Matches & Activity */}
-        <div className="grid lg:grid-cols-2 gap-5">
+        {/* ─── COMMUNITY + ACTIVITY ───────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
 
-          {/* Upcoming matches */}
-          <div
-            className="rounded-2xl p-5 space-y-4"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-base" style={{ color: 'var(--foreground)' }}>Próximos partidos</h2>
-              <Link
-                to="/matches"
-                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                style={{ color: 'var(--primary)', background: 'var(--primary-light)' }}
-              >
-                Ver todos
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
+          {/* Tu Comunidad */}
+          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(22,163,74,0.12)', border: '1px solid rgba(22,163,74,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <MapPin size={16} color="#22c55e" />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase' }}>Comunidad local</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#f1f5f9', letterSpacing: -0.3 }}>
+                  {loadingCommunity ? '—' : (community?.municipalityName ?? 'Tu municipio')}
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {upcomingMatches.length === 0 && (
-                <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>No hay partidos próximos</p>
-              )}
-              {upcomingMatches.slice(0, 4).map((match) => {
-                const homeTeam = teams.find(t => t.id === match.homeTeamId);
-                const awayTeam = teams.find(t => t.id === match.awayTeamId);
+            {/* Stats municipio */}
+            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
+              {[
+                { icon: Trophy, label: 'Torneos',  value: community?.torneos,  color: '#2563eb', bg: 'rgba(37,99,235,0.1)'   },
+                { icon: Users,  label: 'Equipos',  value: community?.equipos,  color: '#0891b2', bg: 'rgba(8,145,178,0.1)'   },
+                { icon: Zap,    label: 'Jugadores', value: community?.jugadores, color: '#22c55e', bg: 'rgba(22,163,74,0.1)'  },
+              ].map(s => {
+                const SIcon = s.icon;
                 return (
-                  <div
-                    key={match.id}
-                    className="rounded-xl p-4 space-y-2"
-                    style={{ background: 'var(--surface-high)', border: '1px solid var(--border)' }}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl leading-none">{homeTeam?.logo}</span>
-                          <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>{homeTeam?.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl leading-none">{awayTeam?.logo}</span>
-                          <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>{awayTeam?.name}</span>
-                        </div>
-                      </div>
-
-                      {match.status === 'live' && (
-                        <div className="flex flex-col items-center gap-1">
-                          <span
-                            className="text-xs font-bold px-2 py-0.5 rounded-full animate-pulse"
-                            style={{ background: 'var(--destructive-light)', color: 'var(--destructive)' }}
-                          >
-                            EN VIVO
-                          </span>
-                          <span className="text-xl font-bold" style={{ color: 'var(--foreground)' }}>
-                            {match.homeScore} - {match.awayScore}
-                          </span>
-                        </div>
-                      )}
-                      {match.status === 'scheduled' && (
-                        <div className="text-right shrink-0">
-                          <div className="flex items-center gap-1 text-xs font-semibold justify-end" style={{ color: 'var(--muted-foreground)' }}>
-                            <Calendar className="h-3 w-3" />
-                            {match.date}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs justify-end mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            <Clock className="h-3 w-3" />
-                            {match.time}
-                          </div>
-                        </div>
-                      )}
+                  <div key={s.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: '14px 10px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+                      <SIcon size={14} color={s.color} />
                     </div>
-                    <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                      <MapPin className="h-3 w-3" />
-                      {match.venue}
+                    <div style={{ fontSize: 26, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>
+                      {loadingCommunity ? '·' : (s.value ?? 0)}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif", textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 3 }}>{s.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* CTA crear torneo */}
+            <div style={{ margin: '0 22px 22px', padding: '18px', borderRadius: 14, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                  ¿Listo para organizar?
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
+                  Crea un torneo para tu comunidad
+                </div>
+              </div>
+              <Link
+                to="/tournaments"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', flexShrink: 0 }}
+              >
+                Crear <ArrowRight size={13} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Actividad reciente */}
+          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Actividad</div>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5, marginBottom: 18 }}>Reciente</h2>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {recentActivity.map((item, i) => {
+                const Icon = activityIcons[item.type];
+                const color = activityColors[item.type];
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: i < recentActivity.length - 1 ? 14 : 0, marginBottom: i < recentActivity.length - 1 ? 14 : 0, borderBottom: i < recentActivity.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `rgba(${color === '#22c55e' ? '22,163,74' : color === '#8b5cf6' ? '139,92,246' : '8,145,178'},0.12)`, border: `1px solid rgba(${color === '#22c55e' ? '22,163,74' : color === '#8b5cf6' ? '139,92,246' : '8,145,178'},0.2)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Icon size={15} color={color} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.75)', fontFamily: "'Barlow', sans-serif", lineHeight: 1.4 }}>{item.text}</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif", marginTop: 3 }}>Hace {item.time}</p>
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+        </div>
 
-          {/* Recent activity */}
-          <div
-            className="rounded-2xl p-5 space-y-4"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
-          >
-            <h2 className="font-bold text-base" style={{ color: 'var(--foreground)' }}>Actividad reciente</h2>
-            <div className="space-y-3">
-              {recentActivity.map((activity, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-3 pb-3"
-                  style={{ borderBottom: index < recentActivity.length - 1 ? '1px solid var(--border)' : 'none' }}
+        {/* ─── TORNEOS ACTIVOS — solo si hay alguno ───────────── */}
+        {tournaments.filter(t => t.status === 'ongoing').length > 0 && (
+          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>En curso</div>
+                <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5 }}>Torneos activos</h2>
+              </div>
+              <Link
+                to="/tournaments"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.2)', color: '#22c55e', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}
+              >
+                Ver todos <ArrowRight size={13} />
+              </Link>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+              {tournaments.filter(t => t.status === 'ongoing').map((tournament) => (
+                <Link
+                  key={tournament.id}
+                  to={`/tournaments/${tournament.id}`}
+                  className="tournament-link"
+                  style={{ borderRadius: 16, overflow: 'hidden', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.06)', background: '#13171f', display: 'block' }}
                 >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'var(--primary-light)' }}
-                  >
-                    {activity.type === 'match' && <Calendar className="h-4 w-4" style={{ color: 'var(--primary)' }} />}
-                    {activity.type === 'team' && <Users className="h-4 w-4" style={{ color: 'var(--primary)' }} />}
-                    {activity.type === 'tournament' && <Trophy className="h-4 w-4" style={{ color: 'var(--primary)' }} />}
+                  <div style={{ padding: '20px', position: 'relative', overflow: 'hidden', background: 'linear-gradient(135deg, #1e3a8a, #1d4ed8)' }}>
+                    <div style={{ position: 'absolute', top: 0, right: 0, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', transform: 'translate(30%,-30%)' }} />
+                    <Trophy size={26} color="#fff" style={{ position: 'relative', zIndex: 1, marginBottom: 10 }} />
+                    <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: -0.3, position: 'relative', zIndex: 1 }}>{tournament.name}</h3>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium leading-snug" style={{ color: 'var(--foreground)' }}>{activity.text}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Hace {activity.time}</p>
+                  <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
+                      <Calendar size={12} />
+                      <span>{new Date(tournament.startDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} — {new Date(tournament.endDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
+                      <Users size={12} /><span>{tournament.teams} equipos</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', textTransform: 'uppercase', letterSpacing: 0.5 }}>En curso</span>
+                      <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 800 }}>Ver →</span>
+                    </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Active tournaments */}
-        <div
-          className="rounded-2xl p-5 space-y-4"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-base" style={{ color: 'var(--foreground)' }}>Torneos activos</h2>
-            <Link
-              to="/tournaments"
-              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
-              style={{ color: 'var(--primary)', background: 'var(--primary-light)' }}
-            >
-              Ver todos
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tournaments.filter(t => t.status === 'ongoing').map((tournament) => (
-              <Link
-                key={tournament.id}
-                to={`/tournaments/${tournament.id}`}
-                className="rounded-xl overflow-hidden transition-all group block"
-                style={{ border: '1px solid var(--border)', background: 'var(--surface-high)' }}
-              >
-                {/* Tournament card header */}
-                <div
-                  className="p-4 relative overflow-hidden"
-                  style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' }}
-                >
-                  <div className="absolute top-0 right-0 w-20 h-20 rounded-full -translate-y-1/2 translate-x-1/2" style={{ background: 'rgba(255,255,255,0.08)' }} />
-                  <Trophy className="h-7 w-7 text-white relative z-10 mb-2" />
-                  <h3 className="font-bold text-white text-sm relative z-10 group-hover:translate-x-0.5 transition-transform">
-                    {tournament.name}
-                  </h3>
-                </div>
-
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                    <Calendar className="h-3.5 w-3.5" />
-                    <span>
-                      {new Date(tournament.startDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} —{' '}
-                      {new Date(tournament.endDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                    <Users className="h-3.5 w-3.5" />
-                    <span>{tournament.teams} equipos</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <span
-                      className="text-xs font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}
-                    >
-                      En curso
-                    </span>
-                    <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
-                      Ver →
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-
-            {tournaments.filter(t => t.status === 'ongoing').length === 0 && (
-              <p className="text-sm col-span-3" style={{ color: 'var(--muted-foreground)' }}>
-                No hay torneos activos en este momento
-              </p>
-            )}
-          </div>
-        </div>
       </div>
     </DashboardLayout>
   );
