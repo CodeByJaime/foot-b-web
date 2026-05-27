@@ -37,7 +37,6 @@ export default function AuthPage() {
     <div style={{ minHeight: '100vh', background: '#080c14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif", color: '#f1f5f9', position: 'relative', overflow: 'hidden' }}>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
         * { box-sizing: border-box; }
         .auth-input:focus { border-color: #22c55e !important; outline: none; }
         .auth-input::placeholder { color: rgba(255,255,255,0.2); }

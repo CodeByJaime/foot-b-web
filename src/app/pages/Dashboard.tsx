@@ -1,10 +1,24 @@
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { Trophy, Users, Calendar, TrendingUp, ArrowRight, MapPin, Zap } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Torneo {
+  id: string;
+  name: string;
+  type: 'cup' | 'league';
+  start_date: string;
+  status: 'upcoming' | 'active' | 'finished';
+  season: string;
+  period: string;
+  level: string;
+  gender: string;
+  ubication_id: string;
+}
 
 interface CommunityStats {
   municipalityName: string;
@@ -13,106 +27,131 @@ interface CommunityStats {
   jugadores: number;
 }
 
+interface DashStats {
+  torneos_activos: number;
+  torneos_proximos: number;
+  equipos_totales: number;
+  partidos_jugados: number;
+}
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+  upcoming: { label: 'Inscripciones',  color: '#2563eb', bg: 'rgba(37,99,235,0.12)',  dot: '#3b82f6' },
+  active:   { label: 'En curso',       color: '#22c55e', bg: 'rgba(22,163,74,0.12)',  dot: '#22c55e' },
+  finished: { label: 'Finalizado',     color: '#64748b', bg: 'rgba(100,116,139,0.1)', dot: '#94a3b8' },
+};
+
+const CARD_GRADIENTS = [
+  ['#1e1b4b', '#4338ca'],
+  ['#164e63', '#0e7490'],
+  ['#14532d', '#15803d'],
+  ['#7c2d12', '#c2410c'],
+  ['#4a044e', '#a21caf'],
+  ['#1e3a5f', '#2563eb'],
+];
+
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function Dashboard() {
-  const { tournaments, teams, matches, loading } = useData();
   const { user } = useAuth();
+
+  const [ubicationId, setUbicationId] = useState<string | null>(null);
+  const [torneos, setTorneos] = useState<Torneo[]>([]);
   const [community, setCommunity] = useState<CommunityStats | null>(null);
-  const [loadingCommunity, setLoadingCommunity] = useState(true);
+  const [dashStats, setDashStats] = useState<DashStats>({ torneos_activos: 0, torneos_proximos: 0, equipos_totales: 0, partidos_jugados: 0 });
+  const [loading, setLoading] = useState(true);
 
+  // 1. Fetch user profile → ubication_id
   useEffect(() => {
-    if (!user?.id) { setLoadingCommunity(false); return; }
+    if (!user?.id) return;
+    supabase
+      .from('PROFILE')
+      .select('ubication_id')
+      .eq('auth_id', user.id)
+      .single()
+      .then(({ data }) => { if (data?.ubication_id) setUbicationId(data.ubication_id); });
+  }, [user?.id]);
 
-    const fetchCommunity = async () => {
-      setLoadingCommunity(true);
+  // 2. Fetch everything once we have ubication_id
+  useEffect(() => {
+    if (!ubicationId) return;
+
+    const fetchAll = async () => {
+      setLoading(true);
       try {
-        const { data: profile } = await supabase
-          .from('PROFILE')
-          .select('ubication_id')
-          .eq('auth_id', user.id)
-          .single();
+        // Tournaments for this ubication (same as mobile)
+        const { data: tData } = await supabase
+          .from('TORNEO')
+          .select('*')
+          .eq('ubication_id', ubicationId)
+          .neq('status', 'finished');
 
-        if (!profile?.ubication_id) return;
+        const torneosList = (tData ?? []) as Torneo[];
+        setTorneos(torneosList);
 
-        const { data: ubication } = await supabase
+        // Municipality data for community stats
+        const { data: ub } = await supabase
           .from('UBICATION')
           .select('municipality_id')
-          .eq('id', profile.ubication_id)
+          .eq('id', ubicationId)
           .single();
 
-        if (!ubication?.municipality_id) return;
+        if (ub?.municipality_id) {
+          const { data: muni } = await supabase
+            .from('MUNICIPALITY')
+            .select('name')
+            .eq('id', ub.municipality_id)
+            .single();
 
-        const { data: municipality } = await supabase
-          .from('MUNICIPALITY')
-          .select('name')
-          .eq('id', ubication.municipality_id)
-          .single();
+          const { data: allUbs } = await supabase
+            .from('UBICATION')
+            .select('id')
+            .eq('municipality_id', ub.municipality_id);
 
-        const { data: ubicaciones } = await supabase
-          .from('UBICATION')
-          .select('id')
-          .eq('municipality_id', ubication.municipality_id);
+          const ids = (allUbs ?? []).map(u => u.id);
 
-        const ids = ubicaciones?.map(u => u.id) ?? [];
+          const [torneosRes, equiposRes, jugadoresRes] = await Promise.all([
+            supabase.from('TORNEO').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+            supabase.from('TEAM').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+            supabase.from('PROFILE').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+          ]);
 
-        const [torneosRes, equiposRes, jugadoresRes] = await Promise.all([
-          supabase.from('TORNEO').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
-          supabase.from('TEAM').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
-          supabase.from('PROFILE').select('id', { count: 'exact', head: true }).in('ubication_id', ids),
+          setCommunity({
+            municipalityName: muni?.name ?? 'tu municipio',
+            torneos: torneosRes.count ?? 0,
+            equipos: equiposRes.count ?? 0,
+            jugadores: jugadoresRes.count ?? 0,
+          });
+        }
+
+        // Dash summary stats
+        const [equiposRes, partidosRes] = await Promise.all([
+          supabase.from('TEAM').select('id', { count: 'exact', head: true }).eq('ubication_id', ubicationId),
+          supabase.from('MATCH').select('id', { count: 'exact', head: true }).eq('status', 'finished'),
         ]);
 
-        setCommunity({
-          municipalityName: municipality?.name ?? 'tu municipio',
-          torneos: torneosRes.count ?? 0,
-          equipos: equiposRes.count ?? 0,
-          jugadores: jugadoresRes.count ?? 0,
+        setDashStats({
+          torneos_activos:  torneosList.length,                                        // active + upcoming (ya excluye finished)
+          torneos_proximos: torneosList.filter(t => t.status === 'upcoming').length,
+          equipos_totales:  equiposRes.count ?? 0,
+          partidos_jugados: partidosRes.count ?? 0,
         });
-      } catch {
-        // silently ignore
+
       } finally {
-        setLoadingCommunity(false);
+        setLoading(false);
       }
     };
 
-    fetchCommunity();
-  }, [user?.id]);
+    fetchAll();
+  }, [ubicationId]);
 
   const stats = [
-    {
-      title: 'Torneos activos',
-      value: tournaments.filter(t => t.status === 'ongoing').length,
-      icon: Trophy,
-      trend: '+12%',
-      color: '#2563eb',
-      bg: 'rgba(37,99,235,0.12)',
-      iconGradient: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-    },
-    {
-      title: 'Equipos totales',
-      value: teams.length,
-      icon: Users,
-      trend: '+8%',
-      color: '#0891b2',
-      bg: 'rgba(8,145,178,0.12)',
-      iconGradient: 'linear-gradient(135deg, #0891b2, #0e7490)',
-    },
-    {
-      title: 'Partidos jugados',
-      value: matches.filter(m => m.status === 'finished').length,
-      icon: Calendar,
-      trend: '+25%',
-      color: '#8b5cf6',
-      bg: 'rgba(139,92,246,0.12)',
-      iconGradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-    },
-    {
-      title: 'Próximos partidos',
-      value: matches.filter(m => m.status === 'scheduled').length,
-      icon: TrendingUp,
-      trend: '+5%',
-      color: '#d97706',
-      bg: 'rgba(217,119,6,0.12)',
-      iconGradient: 'linear-gradient(135deg, #d97706, #b45309)',
-    },
+    { title: 'Torneos activos',  value: dashStats.torneos_activos,  icon: Trophy,     color: '#22c55e', bg: 'rgba(22,163,74,0.12)',    grad: 'linear-gradient(135deg, #16a34a, #22c55e)', trend: null },
+    { title: 'Equipos totales',  value: dashStats.equipos_totales,  icon: Users,      color: '#0891b2', bg: 'rgba(8,145,178,0.12)',    grad: 'linear-gradient(135deg, #0891b2, #0e7490)', trend: null },
+    { title: 'Partidos jugados', value: dashStats.partidos_jugados, icon: Calendar,   color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',   grad: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', trend: null },
+    { title: 'Próximos torneos', value: dashStats.torneos_proximos, icon: TrendingUp, color: '#d97706', bg: 'rgba(217,119,6,0.12)',    grad: 'linear-gradient(135deg, #d97706, #b45309)', trend: null },
   ];
 
   const recentActivity = [
@@ -121,43 +160,24 @@ export default function Dashboard() {
     { type: 'tournament', text: 'Torneo creado: Copa de Verano',                           time: '1 día'   },
   ];
 
-  const activityIcons: Record<string, typeof Calendar> = {
-    match: Calendar,
-    team: Users,
-    tournament: Trophy,
-  };
+  const activityIcon: Record<string, typeof Calendar> = { match: Calendar, team: Users, tournament: Trophy };
+  const activityColor: Record<string, string> = { match: '#8b5cf6', team: '#0891b2', tournament: '#22c55e' };
 
-  const activityColors: Record<string, string> = {
-    match:      '#8b5cf6',
-    team:       '#0891b2',
-    tournament: '#22c55e',
-  };
-
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid rgba(34,197,94,0.2)', borderTopColor: '#22c55e', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, fontFamily: "'Barlow', sans-serif" }}>Cargando datos...</p>
-          </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const activeTorneos  = torneos.filter(t => t.status === 'active');
+  const upcomingTorneos = torneos.filter(t => t.status === 'upcoming');
+  const visibleTorneos = [...activeTorneos, ...upcomingTorneos];
 
   return (
     <DashboardLayout>
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
           @keyframes spin { to { transform: rotate(360deg); } }
-          .dash-card { transition: transform 0.2s ease; }
-          .dash-card:hover { transform: translateY(-2px); }
-          .tournament-link:hover { transform: translateY(-3px); }
-          .tournament-link { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+          .dash-stat:hover { transform: translateY(-2px); }
+          .dash-stat { transition: transform 0.2s ease; }
+          .torneo-card:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+          .torneo-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
         `}</style>
 
         {/* ─── HERO ───────────────────────────────────────────── */}
@@ -165,13 +185,12 @@ export default function Dashboard() {
           <div style={{ position: 'absolute', top: 0, right: 0, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', transform: 'translate(30%,-50%)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', bottom: 0, left: '30%', width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', transform: 'translateY(50%)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', inset: 0, opacity: 0.07, pointerEvents: 'none' }}>
-            <svg width="100%" height="100%" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid slice">
-              <circle cx="450" cy="100" r="70" fill="none" stroke="white" strokeWidth="2"/>
-              <line x1="450" y1="0" x2="450" y2="200" stroke="white" strokeWidth="2"/>
-              <rect x="10" y="10" width="880" height="180" rx="6" fill="none" stroke="white" strokeWidth="2"/>
+            <svg width="100%" height="100%" viewBox="0 0 900 180" preserveAspectRatio="xMidYMid slice">
+              <circle cx="450" cy="90" r="60" fill="none" stroke="white" strokeWidth="2"/>
+              <line x1="450" y1="0" x2="450" y2="180" stroke="white" strokeWidth="2"/>
+              <rect x="10" y="10" width="880" height="160" rx="6" fill="none" stroke="white" strokeWidth="2"/>
             </svg>
           </div>
-
           <div style={{ position: 'relative', zIndex: 2 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Panel de control</div>
             <h1 style={{ fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 900, color: '#fff', letterSpacing: -1, lineHeight: 1, marginBottom: 8 }}>
@@ -184,22 +203,20 @@ export default function Dashboard() {
         </div>
 
         {/* ─── STAT CARDS ─────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-          {stats.map((stat, i) => {
-            const Icon = stat.icon;
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+          {stats.map((s, i) => {
+            const Icon = s.icon;
             return (
-              <div key={i} className="dash-card" style={{ padding: '22px', borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${stat.color}, transparent)` }} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 12, background: stat.iconGradient, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 14px ${stat.bg}` }}>
-                    <Icon size={18} color="#fff" />
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', letterSpacing: 0.5 }}>
-                    {stat.trend}
-                  </span>
+              <div key={i} className="dash-stat" style={{ padding: '22px', borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${s.color}, transparent)` }} />
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: s.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, boxShadow: `0 4px 14px ${s.bg}` }}>
+                  <Icon size={18} color="#fff" />
                 </div>
-                <p style={{ fontSize: 36, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>{stat.value}</p>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>{stat.title}</p>
+                {loading
+                  ? <div style={{ width: 48, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', animation: 'pulse 1.5s ease infinite' }} />
+                  : <p style={{ fontSize: 36, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>{s.value}</p>
+                }
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>{s.title}</p>
               </div>
             );
           })}
@@ -210,7 +227,6 @@ export default function Dashboard() {
 
           {/* Tu Comunidad */}
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-            {/* Header */}
             <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(22,163,74,0.12)', border: '1px solid rgba(22,163,74,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <MapPin size={16} color="#22c55e" />
@@ -218,17 +234,16 @@ export default function Dashboard() {
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase' }}>Comunidad local</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#f1f5f9', letterSpacing: -0.3 }}>
-                  {loadingCommunity ? '—' : (community?.municipalityName ?? 'Tu municipio')}
+                  {loading ? '—' : (community?.municipalityName ?? 'Tu municipio')}
                 </div>
               </div>
             </div>
 
-            {/* Stats municipio */}
             <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
               {[
-                { icon: Trophy, label: 'Torneos',  value: community?.torneos,  color: '#2563eb', bg: 'rgba(37,99,235,0.1)'   },
-                { icon: Users,  label: 'Equipos',  value: community?.equipos,  color: '#0891b2', bg: 'rgba(8,145,178,0.1)'   },
-                { icon: Zap,    label: 'Jugadores', value: community?.jugadores, color: '#22c55e', bg: 'rgba(22,163,74,0.1)'  },
+                { icon: Trophy,    label: 'Torneos',   value: community?.torneos,   color: '#2563eb', bg: 'rgba(37,99,235,0.1)'  },
+                { icon: Users,     label: 'Equipos',   value: community?.equipos,   color: '#0891b2', bg: 'rgba(8,145,178,0.1)'  },
+                { icon: Zap,       label: 'Jugadores', value: community?.jugadores, color: '#22c55e', bg: 'rgba(22,163,74,0.1)'  },
               ].map(s => {
                 const SIcon = s.icon;
                 return (
@@ -236,29 +251,22 @@ export default function Dashboard() {
                     <div style={{ width: 30, height: 30, borderRadius: 8, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
                       <SIcon size={14} color={s.color} />
                     </div>
-                    <div style={{ fontSize: 26, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>
-                      {loadingCommunity ? '·' : (s.value ?? 0)}
-                    </div>
+                    {loading
+                      ? <div style={{ width: 32, height: 24, borderRadius: 6, background: 'rgba(255,255,255,0.06)', margin: '0 auto 4px', animation: 'pulse 1.5s ease infinite' }} />
+                      : <div style={{ fontSize: 26, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>{s.value ?? 0}</div>
+                    }
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif", textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 3 }}>{s.label}</div>
                   </div>
                 );
               })}
             </div>
 
-            {/* CTA crear torneo */}
             <div style={{ margin: '0 22px 22px', padding: '18px', borderRadius: 14, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                  ¿Listo para organizar?
-                </div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
-                  Crea un torneo para tu comunidad
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>¿Listo para organizar?</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>Crea un torneo para tu comunidad</div>
               </div>
-              <Link
-                to="/tournaments"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', flexShrink: 0 }}
-              >
+              <Link to="/tournaments" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', flexShrink: 0 }}>
                 Crear <ArrowRight size={13} />
               </Link>
             </div>
@@ -268,14 +276,14 @@ export default function Dashboard() {
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Actividad</div>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5, marginBottom: 18 }}>Reciente</h2>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {recentActivity.map((item, i) => {
-                const Icon = activityIcons[item.type];
-                const color = activityColors[item.type];
+                const Icon = activityIcon[item.type];
+                const color = activityColor[item.type];
+                const rgb = color === '#22c55e' ? '22,163,74' : color === '#8b5cf6' ? '139,92,246' : '8,145,178';
                 return (
                   <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, paddingBottom: i < recentActivity.length - 1 ? 14 : 0, marginBottom: i < recentActivity.length - 1 ? 14 : 0, borderBottom: i < recentActivity.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `rgba(${color === '#22c55e' ? '22,163,74' : color === '#8b5cf6' ? '139,92,246' : '8,145,178'},0.12)`, border: `1px solid rgba(${color === '#22c55e' ? '22,163,74' : color === '#8b5cf6' ? '139,92,246' : '8,145,178'},0.2)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `rgba(${rgb},0.12)`, border: `1px solid rgba(${rgb},0.2)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Icon size={15} color={color} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -289,50 +297,76 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ─── TORNEOS ACTIVOS — solo si hay alguno ───────────── */}
-        {tournaments.filter(t => t.status === 'ongoing').length > 0 && (
+        {/* ─── TORNEOS (reales desde Supabase) ────────────────── */}
+        {!loading && visibleTorneos.length > 0 && (
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>En curso</div>
-                <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5 }}>Torneos activos</h2>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Tu municipio</div>
+                <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5 }}>
+                  Torneos disponibles
+                  <span style={{ marginLeft: 10, fontSize: 14, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', verticalAlign: 'middle' }}>{visibleTorneos.length}</span>
+                </h2>
               </div>
-              <Link
-                to="/tournaments"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.2)', color: '#22c55e', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}
-              >
+              <Link to="/tournaments" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.2)', color: '#22c55e', textDecoration: 'none', fontWeight: 800, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>
                 Ver todos <ArrowRight size={13} />
               </Link>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-              {tournaments.filter(t => t.status === 'ongoing').map((tournament) => (
-                <Link
-                  key={tournament.id}
-                  to={`/tournaments/${tournament.id}`}
-                  className="tournament-link"
-                  style={{ borderRadius: 16, overflow: 'hidden', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.06)', background: '#13171f', display: 'block' }}
-                >
-                  <div style={{ padding: '20px', position: 'relative', overflow: 'hidden', background: 'linear-gradient(135deg, #1e3a8a, #1d4ed8)' }}>
-                    <div style={{ position: 'absolute', top: 0, right: 0, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', transform: 'translate(30%,-30%)' }} />
-                    <Trophy size={26} color="#fff" style={{ position: 'relative', zIndex: 1, marginBottom: 10 }} />
-                    <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: -0.3, position: 'relative', zIndex: 1 }}>{tournament.name}</h3>
-                  </div>
-                  <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
-                      <Calendar size={12} />
-                      <span>{new Date(tournament.startDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} — {new Date(tournament.endDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+              {visibleTorneos.map((torneo, i) => {
+                const cfg = STATUS_CONFIG[torneo.status] ?? STATUS_CONFIG.upcoming;
+                const [fromColor, toColor] = CARD_GRADIENTS[i % CARD_GRADIENTS.length];
+                return (
+                  <Link
+                    key={torneo.id}
+                    to={`/tournaments/${torneo.id}`}
+                    className="torneo-card"
+                    style={{ borderRadius: 18, overflow: 'hidden', textDecoration: 'none', display: 'block', background: `linear-gradient(135deg, ${fromColor}, ${toColor})`, position: 'relative' }}
+                  >
+                    {/* Deco circles */}
+                    <div style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+                    <div style={{ position: 'absolute', bottom: -20, left: 10, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+
+                    <div style={{ padding: '20px', position: 'relative', zIndex: 1 }}>
+                      {/* Top row */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: cfg.bg, border: `1px solid rgba(255,255,255,0.1)` }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, animation: torneo.status === 'active' ? 'pulse 2s ease infinite' : 'none' }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, color: torneo.status === 'active' ? '#fff' : cfg.color, letterSpacing: 0.5 }}>{cfg.label}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.12)' }}>
+                          <Trophy size={10} color="rgba(255,255,255,0.9)" />
+                          <span style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>{torneo.type === 'cup' ? 'Copa' : 'Liga'}</span>
+                        </div>
+                      </div>
+
+                      {/* Nombre */}
+                      <h3 style={{ fontSize: 20, fontWeight: 900, color: '#fff', letterSpacing: -0.5, lineHeight: 1.2, marginBottom: 12 }}>{torneo.name}</h3>
+
+                      {/* Pills */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                        {[
+                          formatDate(torneo.start_date),
+                          torneo.level,
+                          torneo.gender === 'male' ? 'Masculino' : 'Femenino',
+                        ].map(pill => (
+                          <span key={pill} style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: 600, padding: '3px 8px', borderRadius: 20, background: 'rgba(255,255,255,0.12)', fontFamily: "'Barlow', sans-serif" }}>{pill}</span>
+                        ))}
+                      </div>
+
+                      {/* Footer */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: 12 }}>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>{torneo.season} · {torneo.period}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: 'rgba(255,255,255,0.15)' }}>
+                          <span style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>Ver torneo</span>
+                          <ArrowRight size={11} color="#fff" />
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif" }}>
-                      <Users size={12} /><span>{tournament.teams} equipos</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', textTransform: 'uppercase', letterSpacing: 0.5 }}>En curso</span>
-                      <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 800 }}>Ver →</span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}

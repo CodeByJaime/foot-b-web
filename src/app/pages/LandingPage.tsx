@@ -36,9 +36,7 @@ export default function LandingPage() {
   return (
     <div style={{ background: '#080c14', minHeight: '100vh', fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif", color: '#f1f5f9', overflowX: 'hidden' }}>
 
-      {/* Google Font */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,700;1,900&family=Barlow:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Barlow Condensed', system-ui, sans-serif; }
 
