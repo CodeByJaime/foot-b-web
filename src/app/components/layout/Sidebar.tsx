@@ -41,7 +41,7 @@ export default function Sidebar() {
         {/* Logo */}
         <div className="flex items-center gap-2 relative z-10">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.18)' }}>
-            <Trophy className="h-5 w-5 text-white" />
+            
           </div>
           <span className="text-white font-bold text-lg tracking-tight">Foot-B</span>
         </div>

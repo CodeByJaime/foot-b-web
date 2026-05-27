@@ -107,18 +107,6 @@ export default function LandingPage() {
                 Crear torneo gratis
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link
-                to="/demo"
-                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold transition-all"
-                style={{
-                  background: 'var(--card)',
-                  color: 'var(--foreground)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                }}
-              >
-                Ver demo
-              </Link>
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm pt-2" style={{ color: 'var(--muted-foreground)' }}>
