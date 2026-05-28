@@ -139,20 +139,20 @@ export default function TournamentDetail() {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
+      <div className="p-4 md:p-6 flex flex-col gap-4 md:gap-5" style={{ fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
         <style>{`@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
 
         {/* ─── BACK BUTTON ──────────────────────────────────── */}
         <div>
-          <Link
-            to="/dashboard"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.45)', textDecoration: 'none', fontSize: 14, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', transition: 'color 0.2s' }}
+          <button
+            onClick={() => navigate(-1)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', fontSize: 14, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', transition: 'color 0.2s', fontFamily: 'inherit' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#22c55e')}
             onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.45)')}
           >
-            <ArrowLeft size={16} /> Torneos
-          </Link>
+            <ArrowLeft size={16} /> Volver
+          </button>
         </div>
 
         {/* ─── HERO ─────────────────────────────────────────── */}
@@ -167,7 +167,7 @@ export default function TournamentDetail() {
             </svg>
           </div>
 
-          <div style={{ padding: '32px 28px', position: 'relative', zIndex: 1 }}>
+          <div className="p-5 sm:p-8" style={{ position: 'relative', zIndex: 1 }}>
             {/* Status + type badges */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: cfg.bg, border: '1px solid rgba(255,255,255,0.12)' }}>
@@ -209,7 +209,7 @@ export default function TournamentDetail() {
         </div>
 
         {/* ─── STAT CARDS ───────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           {[
             { icon: Users,    label: 'Equipos confirmados', value: confirmedTeams.length, color: '#0891b2', grad: 'linear-gradient(135deg, #0891b2, #0e7490)' },
             { icon: Calendar, label: 'Partidos jugados',    value: finishedMatches.length, color: '#8b5cf6', grad: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
@@ -230,7 +230,7 @@ export default function TournamentDetail() {
         </div>
 
         {/* ─── QUICK LINKS ──────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { to: `/standings/${id}`, icon: BarChart3, label: 'Tabla de posiciones', sub: 'Ver clasificación', color: '#22c55e', bg: 'rgba(22,163,74,0.1)', border: 'rgba(22,163,74,0.2)' },
             { to: `/brackets/${id}`,  icon: GitBranch, label: 'Llaves',              sub: 'Ver eliminatorias', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.2)' },
@@ -254,7 +254,7 @@ export default function TournamentDetail() {
         </div>
 
         {/* ─── TEAMS + MATCHES ──────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
 
           {/* Equipos */}
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>

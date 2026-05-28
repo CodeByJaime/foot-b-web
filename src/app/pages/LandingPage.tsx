@@ -151,7 +151,7 @@ export default function LandingPage() {
               </div>
 
               <p className="fade-up" style={{ animationDelay: '0.8s', fontSize: 18, lineHeight: 1.6, color: 'rgba(241,245,249,0.55)', fontFamily: "'Barlow', sans-serif", fontWeight: 400, maxWidth: 480, marginBottom: '2rem' }}>
-                La plataforma más moderna y completa para gestionar torneos de fútbol amateur y profesional. Rápida, intuitiva y totalmente automatizada.
+                La plataforma más moderna y completa para gestionar torneos de fútbol amateur. Rápida, intuitiva y totalmente automatizada.
               </p>
 
               <div className="fade-up" style={{ animationDelay: '0.95s', display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
@@ -356,15 +356,15 @@ export default function LandingPage() {
                     style={{ filter: 'brightness(0) invert(1)', display: 'block' }}
                   />
                 </div>
-                <span style={{ fontWeight: 900, fontSize: 24, letterSpacing: -0.5, color: '#fff' }}>FOOT<span style={{ color: '#22c55e' }}>B</span></span>
+                <span style={{ fontWeight: 900, fontSize: 24, letterSpacing: -0.5, color: '#fff' }}>FOOT-<span style={{ color: '#22c55e' }}>B</span></span>
               </div>
               <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", maxWidth: 240 }}>
-                La plataforma líder para gestión de torneos de fútbol amateur y profesional.
+                La plataforma líder para gestión de torneos de fútbol amateur.
               </p>
             </div>
 
             {[
-              { title: 'Producto', links: ['Características', 'Precios', 'Demo'] },
+              { title: 'Producto', links: ['Características', 'Demo'] },
               { title: 'Soporte', links: ['Centro de ayuda', 'Contacto', 'Estado'] },
               { title: 'Legal', links: ['Privacidad', 'Términos'] },
             ].map(col => (
