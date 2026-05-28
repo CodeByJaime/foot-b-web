@@ -67,7 +67,7 @@ export default function LandingPage() {
       `}</style>
 
       {/* ─── NAVBAR ─────────────────────────────────────────── */}
-      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, padding: '0 2rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,12,20,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <nav className="px-4! md:px-8" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,12,20,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
              <img
@@ -82,10 +82,10 @@ export default function LandingPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-          <a href="#features" className="nav-link">Características</a>
-          <a href="#how-it-works" className="nav-link">Cómo funciona</a>
+          <a href="#features" className="nav-link hidden md:inline">Características</a>
+          <a href="#how-it-works" className="nav-link hidden md:inline">Cómo funciona</a>
           <Link to="/auth"
-            style={{ padding: '8px 20px', borderRadius: 8, background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, letterSpacing: 0.5, textDecoration: 'none', fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
+            style={{ padding: '8px 16px', borderRadius: 8, background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, letterSpacing: 0.5, textDecoration: 'none', fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
             Empezar gratis
           </Link>
         </div>
@@ -127,8 +127,8 @@ export default function LandingPage() {
         <div style={{ position: 'absolute', top: '30%', left: '5%', width: 400, height: 400, borderRadius: '50%', background: 'rgba(22,163,74,0.06)', filter: 'blur(80px)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', top: '10%', right: '5%', width: 500, height: 500, borderRadius: '50%', background: 'rgba(37,99,235,0.06)', filter: 'blur(100px)', pointerEvents: 'none' }} />
 
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 2rem', position: 'relative', zIndex: 2, width: '100%' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4rem', alignItems: 'center' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 1rem', position: 'relative', zIndex: 2, width: '100%' }}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
 
             {/* Texto */}
             <div>
@@ -224,7 +224,7 @@ export default function LandingPage() {
               </div>
 
               {/* Card flotante goleador */}
-              <div style={{ position: 'absolute', right: -32, bottom: -24, background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
+              <div className="hidden lg:flex" style={{ position: 'absolute', right: -32, bottom: -24, background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, padding: '14px 18px', alignItems: 'center', gap: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg, #d97706, #b45309)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>⚽</div>
                 <div>
                   <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 2 }}>Goleador</div>
@@ -233,7 +233,7 @@ export default function LandingPage() {
               </div>
 
               {/* Card flotante tabla */}
-              <div style={{ position: 'absolute', left: -28, top: -20, background: '#0d1520', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 14, padding: '14px 18px', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
+              <div className="hidden lg:block" style={{ position: 'absolute', left: -28, top: -20, background: '#0d1520', border: '1px solid rgba(22,163,74,0.2)', borderRadius: 14, padding: '14px 18px', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}>
                 <div style={{ fontSize: 10, color: '#22c55e', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Tabla</div>
                 {[['1', 'Tigres FC', '15'], ['2', 'Rayos SC', '12'], ['3', 'Leones SC', '10']].map(([pos, name, pts]) => (
                   <div key={name} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
@@ -252,7 +252,7 @@ export default function LandingPage() {
       <section id="features" style={{ padding: '100px 0', background: '#0d1117', position: 'relative' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 2rem' }}>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 64 }}>
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-6 mb-12 lg:mb-16">
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>Características</div>
               <h2 style={{ fontSize: 'clamp(40px,5vw,60px)', fontWeight: 900, color: '#f1f5f9', letterSpacing: -1.5, lineHeight: 0.95 }}>
@@ -264,7 +264,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {features.map((f, i) => (
               <div key={i} className="feature-card"
                 style={{ padding: '28px', borderRadius: 20, background: '#13171f', border: '1px solid rgba(255,255,255,0.06)', cursor: 'default', position: 'relative', overflow: 'hidden' }}>
@@ -292,7 +292,7 @@ export default function LandingPage() {
             <h2 style={{ fontSize: 'clamp(40px,5vw,60px)', fontWeight: 900, color: '#f1f5f9', letterSpacing: -1.5 }}>CÓMO FUNCIONA</h2>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {steps.map((step, i) => (
               <div key={i} className="step-card" data-n={step.n}
                 style={{ padding: '36px 28px', borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
@@ -300,7 +300,7 @@ export default function LandingPage() {
                 <h3 style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9', marginBottom: 12, letterSpacing: -0.5 }}>{step.title}</h3>
                 <p style={{ fontSize: 15, lineHeight: 1.65, color: 'rgba(241,245,249,0.45)', fontFamily: "'Barlow', sans-serif", fontWeight: 400 }}>{step.sub}</p>
                 {i < steps.length - 1 && (
-                  <div style={{ position: 'absolute', right: -12, top: '50%', transform: 'translateY(-50%)', width: 24, height: 24, borderRadius: '50%', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+                  <div className="hidden md:flex" style={{ position: 'absolute', right: -12, top: '50%', transform: 'translateY(-50%)', width: 24, height: 24, borderRadius: '50%', background: '#16a34a', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
                     <ArrowRight size={12} color="#fff" />
                   </div>
                 )}
@@ -344,7 +344,7 @@ export default function LandingPage() {
       {/* ─── FOOTER ──────────────────────────────────────────── */}
       <footer style={{ background: '#0d1117', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '60px 0 32px' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 2rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 48, marginBottom: 48 }}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12 mb-10 lg:mb-12">
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -385,7 +385,7 @@ export default function LandingPage() {
             ))}
           </div>
 
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24 }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif" }}>© 2026 Foot-B. Todos los derechos reservados.</span>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif" }}>El fútbol de barrio también merece su liga.</span>
           </div>
