@@ -76,6 +76,8 @@ export default function Teams() {
   const [addTarget, setAddTarget]               = useState<Team | null>(null);
   const [selectedTorneoId, setSelectedTorneoId] = useState<string>('');
   const [adding, setAdding]                     = useState(false);
+  const [enrolledTorneos, setEnrolledTorneos]   = useState<string[]>([]);
+  const [removingTorneoId, setRemovingTorneoId] = useState<string | null>(null);
 
   // ── Guest players modal ──
   const [playerTarget, setPlayerTarget]     = useState<Team | null>(null);
@@ -260,7 +262,7 @@ export default function Teams() {
         if (error) throw error;
       }
       toast.success(`${addTarget.name} añadido al torneo`);
-      setAddTarget(null);
+      setEnrolledTorneos(prev => [...prev, selectedTorneoId]);
       setSelectedTorneoId('');
     } catch (err: any) {
       toast.error(err.message ?? 'Error al añadir al torneo');
@@ -271,7 +273,30 @@ export default function Teams() {
 
   const openAddModal = (team: Team) => {
     setAddTarget(team);
-    setSelectedTorneoId(myTorneos[0]?.id ?? '');
+    setSelectedTorneoId('');
+    setEnrolledTorneos([]);
+    supabase
+      .from('TORNEO_TEAMS')
+      .select('torneo_id')
+      .eq('team_id', team.id)
+      .then(({ data }) => setEnrolledTorneos((data ?? []).map((r: any) => r.torneo_id)));
+  };
+
+  const handleRemoveFromTorneo = async (torneoId: string) => {
+    if (!addTarget) return;
+    setRemovingTorneoId(torneoId);
+    const { error } = await supabase
+      .from('TORNEO_TEAMS')
+      .delete()
+      .eq('team_id', addTarget.id)
+      .eq('torneo_id', torneoId);
+    if (!error) {
+      setEnrolledTorneos(prev => prev.filter(id => id !== torneoId));
+      toast.success('Equipo eliminado del torneo');
+    } else {
+      toast.error('Error al eliminar del torneo');
+    }
+    setRemovingTorneoId(null);
   };
 
   const list = (tab === 'mine' ? myTeams : regionTeams)
@@ -575,19 +600,38 @@ export default function Teams() {
                       Selecciona el torneo
                     </label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-                      {myTorneos.map(t => (
-                        <button key={t.id} type="button" onClick={() => setSelectedTorneoId(t.id)}
-                          style={{ padding: '12px 14px', borderRadius: 12, cursor: 'pointer', background: selectedTorneoId === t.id ? 'rgba(22,163,74,0.12)' : 'rgba(255,255,255,0.03)', border: selectedTorneoId === t.id ? '1.5px solid #22c55e' : '1.5px solid rgba(255,255,255,0.08)', color: selectedTorneoId === t.id ? '#22c55e' : '#f1f5f9', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.15s ease' }}>
-                          <Trophy size={14} color={selectedTorneoId === t.id ? '#22c55e' : 'rgba(255,255,255,0.25)'} />
-                          {t.name}
-                        </button>
-                      ))}
+                      {myTorneos.map(t => {
+                        const enrolled = enrolledTorneos.includes(t.id);
+                        const removing = removingTorneoId === t.id;
+                        return enrolled ? (
+                          <div key={t.id} style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <Trophy size={14} color="rgba(255,255,255,0.25)" />
+                            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.55)', fontFamily: "'Barlow Condensed', sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', letterSpacing: 0.5, background: 'rgba(22,163,74,0.12)', padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>YA INSCRITO</span>
+                            <button
+                              onClick={() => handleRemoveFromTorneo(t.id)}
+                              disabled={removing}
+                              style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: removing ? 'rgba(255,255,255,0.3)' : '#f87171', cursor: removing ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, fontFamily: '"Barlow Condensed", sans-serif', textTransform: 'uppercase', flexShrink: 0, transition: 'all 0.15s ease' }}
+                              onMouseEnter={e => { if (!removing) e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                            >
+                              {removing ? '...' : 'Quitar'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button key={t.id} type="button" onClick={() => setSelectedTorneoId(t.id)}
+                            style={{ padding: '12px 14px', borderRadius: 12, cursor: 'pointer', background: selectedTorneoId === t.id ? 'rgba(22,163,74,0.12)' : 'rgba(255,255,255,0.03)', border: selectedTorneoId === t.id ? '1.5px solid #22c55e' : '1.5px solid rgba(255,255,255,0.08)', color: selectedTorneoId === t.id ? '#22c55e' : '#f1f5f9', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.15s ease' }}>
+                            <Trophy size={14} color={selectedTorneoId === t.id ? '#22c55e' : 'rgba(255,255,255,0.25)'} />
+                            {t.name}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={() => setAddTarget(null)}
                         style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
-                        Cancelar
+                        Cerrar
                       </button>
                       <button onClick={handleAddToTorneo} disabled={adding || !selectedTorneoId}
                         style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', cursor: (adding || !selectedTorneoId) ? 'not-allowed' : 'pointer', background: (adding || !selectedTorneoId) ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #16a34a, #15803d)', color: (adding || !selectedTorneoId) ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 14, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, boxShadow: (adding || !selectedTorneoId) ? 'none' : '0 4px 14px rgba(22,163,74,0.25)' }}>
