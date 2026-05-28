@@ -21,7 +21,12 @@ export default function Sidebar() {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
+  const isActive = (path: string) =>
+    location.pathname === path ||
+    (path !== '/dashboard' && location.pathname.startsWith('/' + path.split('/')[1]));
+
   return (
+    <>
     <aside
       className="w-64 h-screen sticky top-0 hidden md:flex flex-col overflow-hidden"
       style={{
@@ -92,9 +97,7 @@ export default function Sidebar() {
       <nav style={{ flex: 1, overflowY: 'auto', padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {menuItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            location.pathname === item.path ||
-            (item.path !== '/dashboard' && location.pathname.startsWith('/' + item.path.split('/')[1]));
+          const active = isActive(item.path);
 
           return (
             <Link
@@ -109,13 +112,13 @@ export default function Sidebar() {
                 textDecoration: 'none',
                 position: 'relative',
                 transition: 'transform 0.2s ease, background 0.2s ease',
-                background: isActive ? 'rgba(22,163,74,0.12)' : 'transparent',
-                border: `1px solid ${isActive ? 'rgba(22,163,74,0.25)' : 'transparent'}`,
-                color: isActive ? '#22c55e' : 'rgba(255,255,255,0.45)',
+                background: active ? 'rgba(22,163,74,0.12)' : 'transparent',
+                border: `1px solid ${active ? 'rgba(22,163,74,0.25)' : 'transparent'}`,
+                color: active ? '#22c55e' : 'rgba(255,255,255,0.45)',
               }}
             >
               {/* Active left bar */}
-              {isActive && (
+              {active && (
                 <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: '60%', borderRadius: '0 4px 4px 0', background: '#22c55e' }} />
               )}
 
@@ -128,9 +131,9 @@ export default function Sidebar() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                background: isActive ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'rgba(255,255,255,0.05)',
-                border: isActive ? 'none' : '1px solid rgba(255,255,255,0.06)',
-                color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
+                background: active ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'rgba(255,255,255,0.05)',
+                border: active ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                color: active ? '#fff' : 'rgba(255,255,255,0.4)',
                 transition: 'all 0.2s ease',
               }}>
                 <Icon size={15} />
@@ -158,5 +161,46 @@ export default function Sidebar() {
         </Link>
       </div>
     </aside>
+
+    {/* ─── BOTTOM NAV (solo móvil) ──────────────────────── */}
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 flex md:hidden"
+      style={{
+        background: '#080c14',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif",
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+    >
+      {menuItems.map((item) => {
+        const Icon = item.icon;
+        const active = isActive(item.path);
+        return (
+          <Link
+            key={item.path}
+            to={item.path}
+            className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5"
+            style={{ textDecoration: 'none', color: active ? '#22c55e' : 'rgba(255,255,255,0.35)', position: 'relative' }}
+          >
+            {active && (
+              <span style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 24, height: 2, borderRadius: '0 0 4px 4px', background: '#22c55e' }} />
+            )}
+            <Icon size={20} />
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              {item.label}
+            </span>
+          </Link>
+        );
+      })}
+      <button
+        onClick={() => signOut?.()}
+        className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}
+      >
+        <LogOut size={20} />
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Salir</span>
+      </button>
+    </nav>
+    </>
   );
 }

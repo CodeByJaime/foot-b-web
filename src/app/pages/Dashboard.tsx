@@ -181,7 +181,7 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
+      <div className="p-4 md:p-6 flex flex-col gap-4 md:gap-5" style={{ fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
         <style>{`
           @keyframes spin { to { transform: rotate(360deg); } }
@@ -193,7 +193,7 @@ export default function Dashboard() {
         `}</style>
 
         {/* ─── HERO ───────────────────────────────────────────── */}
-        <div style={{ borderRadius: 20, padding: '32px 28px', position: 'relative', overflow: 'hidden', background: 'linear-gradient(160deg, #052e16 0%, #14532d 45%, #166534 75%, #15803d 100%)' }}>
+        <div className="p-5 sm:p-8" style={{ borderRadius: 20, position: 'relative', overflow: 'hidden', background: 'linear-gradient(160deg, #052e16 0%, #14532d 45%, #166534 75%, #15803d 100%)' }}>
           <div style={{ position: 'absolute', top: 0, right: 0, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', transform: 'translate(30%,-50%)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', bottom: 0, left: '30%', width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', transform: 'translateY(50%)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', inset: 0, opacity: 0.07, pointerEvents: 'none' }}>
@@ -215,7 +215,7 @@ export default function Dashboard() {
         </div>
 
         {/* ─── STAT CARDS ─────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
           {stats.map((s, i) => {
             const Icon = s.icon;
             return (
@@ -235,7 +235,7 @@ export default function Dashboard() {
         </div>
 
         {/* ─── COMMUNITY + ACTIVITY ───────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
 
           {/* Tu Comunidad */}
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
@@ -325,7 +325,7 @@ export default function Dashboard() {
               </Link>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {visibleTorneos.map((torneo, i) => {
                 const cfg = STATUS_CONFIG[torneo.status] ?? STATUS_CONFIG.upcoming;
                 const [fromColor, toColor] = CARD_GRADIENTS[i % CARD_GRADIENTS.length];
