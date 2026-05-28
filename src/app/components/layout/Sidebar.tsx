@@ -3,22 +3,18 @@ import {
   LayoutDashboard,
   Trophy,
   Users,
-  UserCircle,
-  Calendar,
   BarChart3,
-  GitBranch,
+  CalendarRange,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Panel',    path: '/dashboard'    },
-  { icon: Trophy,          label: 'Torneos',      path: '/tournaments'  },
-  { icon: Users,           label: 'Equipos',      path: '/teams'        },
-  { icon: UserCircle,      label: 'Jugadores',    path: '/players'      },
-  { icon: Calendar,        label: 'Partidos',     path: '/matches'      },
-  { icon: BarChart3,       label: 'Estadísticas', path: '/standings/1'  },
-  { icon: GitBranch,       label: 'Brackets',     path: '/brackets/1'   },
+  { icon: LayoutDashboard, label: 'Panel',        path: '/dashboard'   },
+  { icon: Trophy,          label: 'Torneos',       path: '/tournaments' },
+  { icon: Users,           label: 'Equipos',       path: '/teams'       },
+  { icon: BarChart3,       label: 'Estadísticas',  path: '/standings/1' },
+  { icon: CalendarRange,   label: 'Cronograma',    path: '/brackets'    },
 ];
 
 export default function Sidebar() {
