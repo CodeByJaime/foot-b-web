@@ -62,12 +62,18 @@ export default function AuthPage() {
       <div style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 10 }}>
 
         {/* ─── LOGO ────────────────────────────────────────────── */}
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 32, textDecoration: 'none' }}>
+        <Link to="/" style={{ display: 'flex', paddingTop: 8, alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 32, textDecoration: 'none' }}>
           <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(22,163,74,0.35)' }}>
-            <img src="/assets/icon-foot-b.png" alt="Foot-B" width={30} height={30} style={{ filter: 'brightness(0) invert(1)' }} />
+            <img
+              src="/icon-foot-b.svg"
+              alt="Foot-B"
+              width={26}
+              height={26}
+              style={{ filter: 'brightness(0) invert(1)', display: 'block' }}
+            />
           </div>
           <span style={{ fontWeight: 900, fontSize: 28, letterSpacing: '-0.5px', color: '#fff', textTransform: 'uppercase' }}>
-            FOOT<span style={{ color: '#22c55e' }}>B</span>
+            FOOT-<span style={{ color: '#22c55e' }}>B</span>
           </span>
         </Link>
 
