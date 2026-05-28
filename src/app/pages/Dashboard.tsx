@@ -57,6 +57,7 @@ const formatDate = (d: string) =>
 export default function Dashboard() {
   const { user } = useAuth();
 
+  const [profileId, setProfileId]     = useState<string | null>(null);
   const [ubicationId, setUbicationId] = useState<string | null>(null);
   const [torneos, setTorneos] = useState<Torneo[]>([]);
   const [community, setCommunity] = useState<CommunityStats | null>(null);
@@ -68,27 +69,38 @@ export default function Dashboard() {
     if (!user?.id) return;
     supabase
       .from('PROFILE')
-      .select('ubication_id')
+      .select('id, ubication_id')
       .eq('auth_id', user.id)
       .single()
-      .then(({ data }) => { if (data?.ubication_id) setUbicationId(data.ubication_id); });
+      .then(({ data }) => {
+        if (data?.id)            setProfileId(data.id);
+        if (data?.ubication_id)  setUbicationId(data.ubication_id);
+      });
   }, [user?.id]);
 
-  // 2. Fetch everything once we have ubication_id
+  // 2. Fetch everything once we have ubication_id + profileId
   useEffect(() => {
-    if (!ubicationId) return;
+    if (!ubicationId || !profileId) return;
 
     const fetchAll = async () => {
       setLoading(true);
       try {
-        // Tournaments for this ubication (same as mobile)
-        const { data: tData } = await supabase
-          .from('TORNEO')
-          .select('*')
-          .eq('ubication_id', ubicationId)
-          .neq('status', 'finished');
+        // Own tournaments via TORNEO_ADMINS
+        const { data: adminData } = await supabase
+          .from('TORNEO_ADMINS')
+          .select('torneo_id')
+          .eq('profile_id', profileId);
 
-        const torneosList = (tData ?? []) as Torneo[];
+        const torneoIds = (adminData ?? []).map((a: any) => a.torneo_id);
+        let torneosList: Torneo[] = [];
+        if (torneoIds.length > 0) {
+          const { data: tData } = await supabase
+            .from('TORNEO')
+            .select('*')
+            .in('id', torneoIds)
+            .neq('status', 'finished');
+          torneosList = (tData ?? []) as Torneo[];
+        }
         setTorneos(torneosList);
 
         // Municipality data for community stats
@@ -145,7 +157,7 @@ export default function Dashboard() {
     };
 
     fetchAll();
-  }, [ubicationId]);
+  }, [ubicationId, profileId]);
 
   const stats = [
     { title: 'Torneos activos',  value: dashStats.torneos_activos,  icon: Trophy,     color: '#22c55e', bg: 'rgba(22,163,74,0.12)',    grad: 'linear-gradient(135deg, #16a34a, #22c55e)', trend: null },
@@ -302,9 +314,9 @@ export default function Dashboard() {
           <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Tu municipio</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Gestión</div>
                 <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5 }}>
-                  Torneos disponibles
+                  Mis torneos
                   <span style={{ marginLeft: 10, fontSize: 14, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: 'rgba(22,163,74,0.12)', color: '#22c55e', verticalAlign: 'middle' }}>{visibleTorneos.length}</span>
                 </h2>
               </div>

@@ -5,18 +5,18 @@ import {
 import { useEffect, useRef } from 'react';
 
 const features = [
-  { icon: Trophy,    title: 'Múltiples formatos',      description: 'Liga, Copa, Grupos + Eliminación y formatos personalizados para cualquier competición.',  color: '#2563eb', bg: 'rgba(37,99,235,0.12)'   },
-  { icon: Calendar,  title: 'Fixture automático',       description: 'Genera calendario y llaves en un clic, ajustado a tus fechas y equipos.',                  color: '#0891b2', bg: 'rgba(8,145,178,0.12)'    },
-  { icon: Users,     title: 'Gestión completa',         description: 'Equipos, jugadores, estadísticas y resultados administrados desde un solo lugar.',           color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
-  { icon: BarChart3, title: 'Estadísticas en vivo',     description: 'Tablas, goleadores, tarjetas y gráficas actualizadas al instante.',                          color: '#d97706', bg: 'rgba(217,119,6,0.12)'   },
-  { icon: Zap,       title: 'Notificaciones al instante', description: 'Marcadores y alertas en tiempo real para todos los participantes.',                        color: '#db2777', bg: 'rgba(219,39,119,0.12)'  },
-  { icon: Shield,    title: 'Roles y permisos',         description: 'Organizadores, árbitros, jugadores y espectadores con accesos diferenciados.',               color: '#16a34a', bg: 'rgba(22,163,74,0.12)'   },
+  { icon: Trophy, title: 'Múltiples formatos', description: 'Liga, Copa, Grupos + Eliminación y formatos personalizados para cualquier competición.', color: '#2563eb', bg: 'rgba(37,99,235,0.12)' },
+  { icon: Calendar, title: 'Fixture automático', description: 'Genera calendario y llaves en un clic, ajustado a tus fechas y equipos.', color: '#0891b2', bg: 'rgba(8,145,178,0.12)' },
+  { icon: Users, title: 'Gestión completa', description: 'Equipos, jugadores, estadísticas y resultados administrados desde un solo lugar.', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+  { icon: BarChart3, title: 'Estadísticas en vivo', description: 'Tablas, goleadores, tarjetas y gráficas actualizadas al instante.', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+  { icon: Zap, title: 'Notificaciones al instante', description: 'Marcadores y alertas en tiempo real para todos los participantes.', color: '#db2777', bg: 'rgba(219,39,119,0.12)' },
+  { icon: Shield, title: 'Roles y permisos', description: 'Organizadores, árbitros, jugadores y espectadores con accesos diferenciados.', color: '#16a34a', bg: 'rgba(22,163,74,0.12)' },
 ];
 
 const steps = [
-  { n: '01', title: 'Crea tu torneo',    sub: 'Elige formato, configura reglas y fechas en segundos.' },
-  { n: '02', title: 'Agrega equipos',    sub: 'Invita equipos o créalos tú mismo con todos sus jugadores.' },
-  { n: '03', title: 'Comienza a jugar',  sub: 'El sistema genera el calendario y gestiona todo automáticamente.' },
+  { n: '01', title: 'Crea tu torneo', sub: 'Elige formato, configura reglas y fechas en segundos.' },
+  { n: '02', title: 'Agrega equipos', sub: 'Invita equipos o créalos tú mismo con todos sus jugadores.' },
+  { n: '03', title: 'Comienza a jugar', sub: 'El sistema genera el calendario y gestiona todo automáticamente.' },
 ];
 
 export default function LandingPage() {
@@ -70,9 +70,15 @@ export default function LandingPage() {
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, padding: '0 2rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,12,20,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Trophy size={16} color="#fff" />
+             <img
+              src="/icon-foot-b.svg"
+              alt="Foot-B"
+              width={26}
+              height={26}
+              style={{ filter: 'brightness(0) invert(1)', display: 'block' }}
+            />
           </div>
-          <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.5px', color: '#fff' }}>FOOT<span style={{ color: '#22c55e' }}>B</span></span>
+          <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.5px', color: '#fff' }}>FOOT-<span style={{ color: '#22c55e' }}>B</span></span>
         </div>
 
         <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
@@ -106,14 +112,14 @@ export default function LandingPage() {
         {/* Cancha de fondo */}
         <div ref={heroRef} style={{ position: 'absolute', inset: 0, opacity: 0.05, pointerEvents: 'none' }}>
           <svg width="100%" height="100%" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
-            <rect x="60" y="40" width="1080" height="620" rx="8" fill="none" stroke="white" strokeWidth="3"/>
-            <line x1="600" y1="40" x2="600" y2="660" stroke="white" strokeWidth="3"/>
-            <circle cx="600" cy="350" r="120" fill="none" stroke="white" strokeWidth="3"/>
-            <circle cx="600" cy="350" r="5" fill="white"/>
-            <rect x="60" y="230" width="140" height="240" fill="none" stroke="white" strokeWidth="3"/>
-            <rect x="1000" y="230" width="140" height="240" fill="none" stroke="white" strokeWidth="3"/>
-            <path d="M200 280 Q260 350 200 420" fill="none" stroke="white" strokeWidth="3"/>
-            <path d="M1000 280 Q940 350 1000 420" fill="none" stroke="white" strokeWidth="3"/>
+            <rect x="60" y="40" width="1080" height="620" rx="8" fill="none" stroke="white" strokeWidth="3" />
+            <line x1="600" y1="40" x2="600" y2="660" stroke="white" strokeWidth="3" />
+            <circle cx="600" cy="350" r="120" fill="none" stroke="white" strokeWidth="3" />
+            <circle cx="600" cy="350" r="5" fill="white" />
+            <rect x="60" y="230" width="140" height="240" fill="none" stroke="white" strokeWidth="3" />
+            <rect x="1000" y="230" width="140" height="240" fill="none" stroke="white" strokeWidth="3" />
+            <path d="M200 280 Q260 350 200 420" fill="none" stroke="white" strokeWidth="3" />
+            <path d="M1000 280 Q940 350 1000 420" fill="none" stroke="white" strokeWidth="3" />
           </svg>
         </div>
 
@@ -250,7 +256,7 @@ export default function LandingPage() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 }}>Características</div>
               <h2 style={{ fontSize: 'clamp(40px,5vw,60px)', fontWeight: 900, color: '#f1f5f9', letterSpacing: -1.5, lineHeight: 0.95 }}>
-                TODO LO QUE<br/><span style={{ color: 'rgba(241,245,249,0.3)' }}>NECESITAS</span>
+                TODO LO QUE<br /><span style={{ color: 'rgba(241,245,249,0.3)' }}>NECESITAS</span>
               </h2>
             </div>
             <p style={{ maxWidth: 320, fontSize: 15, lineHeight: 1.7, color: 'rgba(241,245,249,0.4)', fontFamily: "'Barlow', sans-serif", fontWeight: 400 }}>
@@ -314,16 +320,16 @@ export default function LandingPage() {
         {/* Cancha tenue */}
         <div style={{ position: 'absolute', inset: 0, opacity: 0.07, pointerEvents: 'none' }}>
           <svg width="100%" height="100%" viewBox="0 0 1200 500" preserveAspectRatio="xMidYMid slice">
-            <rect x="40" y="30" width="1120" height="440" rx="8" fill="none" stroke="white" strokeWidth="2.5"/>
-            <line x1="600" y1="30" x2="600" y2="470" stroke="white" strokeWidth="2.5"/>
-            <circle cx="600" cy="250" r="100" fill="none" stroke="white" strokeWidth="2.5"/>
+            <rect x="40" y="30" width="1120" height="440" rx="8" fill="none" stroke="white" strokeWidth="2.5" />
+            <line x1="600" y1="30" x2="600" y2="470" stroke="white" strokeWidth="2.5" />
+            <circle cx="600" cy="250" r="100" fill="none" stroke="white" strokeWidth="2.5" />
           </svg>
         </div>
 
         <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 2rem', textAlign: 'center', position: 'relative', zIndex: 2 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.6)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 20 }}>¿Listo?</div>
           <h2 style={{ fontSize: 'clamp(48px,6vw,80px)', fontWeight: 900, color: '#fff', letterSpacing: -2, lineHeight: 0.95, marginBottom: 24 }}>
-            ORGANIZA TU<br/>PRÓXIMO TORNEO
+            ORGANIZA TU<br />PRÓXIMO TORNEO
           </h2>
           <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.65)', fontFamily: "'Barlow', sans-serif", fontWeight: 400, marginBottom: 40, lineHeight: 1.6 }}>
             Únete a miles de organizadores que ya confían en Foot-B para gestionar sus competiciones.
@@ -342,7 +348,13 @@ export default function LandingPage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Trophy size={18} color="#fff" />
+                  <img
+                    src="/icon-foot-b.svg"
+                    alt="Foot-B"
+                    width={26}
+                    height={26}
+                    style={{ filter: 'brightness(0) invert(1)', display: 'block' }}
+                  />
                 </div>
                 <span style={{ fontWeight: 900, fontSize: 24, letterSpacing: -0.5, color: '#fff' }}>FOOT<span style={{ color: '#22c55e' }}>B</span></span>
               </div>

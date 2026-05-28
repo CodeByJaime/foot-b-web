@@ -3,22 +3,18 @@ import {
   LayoutDashboard,
   Trophy,
   Users,
-  UserCircle,
-  Calendar,
   BarChart3,
-  GitBranch,
+  CalendarRange,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Panel',    path: '/dashboard'    },
-  { icon: Trophy,          label: 'Torneos',      path: '/tournaments'  },
-  { icon: Users,           label: 'Equipos',      path: '/teams'        },
-  { icon: UserCircle,      label: 'Jugadores',    path: '/players'      },
-  { icon: Calendar,        label: 'Partidos',     path: '/matches'      },
-  { icon: BarChart3,       label: 'Estadísticas', path: '/standings/1'  },
-  { icon: GitBranch,       label: 'Brackets',     path: '/brackets/1'   },
+  { icon: LayoutDashboard, label: 'Panel',        path: '/dashboard'   },
+  { icon: Trophy,          label: 'Torneos',       path: '/tournaments' },
+  { icon: Users,           label: 'Equipos',       path: '/teams'       },
+  { icon: BarChart3,       label: 'Estadísticas',  path: '/standings/1' },
+  { icon: CalendarRange,   label: 'Cronograma',    path: '/brackets'    },
 ];
 
 export default function Sidebar() {
@@ -56,12 +52,18 @@ export default function Sidebar() {
         </div>
 
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, position: 'relative', zIndex: 2 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Trophy size={18} color="#fff" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #16a34a, #22c55e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(22,163,74,0.4)', flexShrink: 0 }}>
+            <img
+              src="/icon-foot-b.svg"
+              alt="Foot-B"
+              width={26}
+              height={26}
+              style={{ filter: 'brightness(0) invert(1)', display: 'block' }}
+            />
           </div>
-          <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.5px', color: '#fff', textTransform: 'uppercase' }}>
-            FOOT<span style={{ color: '#86efac' }}>B</span>
+          <span style={{ fontWeight: 900, fontSize: 24, letterSpacing: '-0.5px', color: '#fff', textTransform: 'uppercase', lineHeight: 1 }}>
+            FOOT-<span style={{ color: '#86efac' }}>B</span>
           </span>
         </div>
 

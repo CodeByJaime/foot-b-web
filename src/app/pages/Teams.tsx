@@ -1,173 +1,791 @@
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import { Search, Users } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
-import CreateTeamModal from '../components/ui/CreateTeamModal';
+import { Plus, Users, Search, Trophy, X, Shield, UserPlus, Trash2, ChevronUp } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { toast } from 'sonner';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Team {
+  id: string;
+  name: string | null;
+  code: string | null;
+  logo: string | null;
+  gender: string | null;
+  founded: string | null;
+  ubication_id: string | null;
+  is_artificial: boolean;
+}
+
+interface Torneo {
+  id: string;
+  name: string;
+}
+
+interface GuestPlayer {
+  id: string;
+  name: string;
+  lastname: string | null;
+  dominant_leg: string | null;
+  gender: string | null;
+  birth_year: number | null;
+  is_active: boolean;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TEAM_COLORS = [
+  ['#1e1b4b', '#4338ca'],
+  ['#164e63', '#0e7490'],
+  ['#14532d', '#15803d'],
+  ['#7c2d12', '#c2410c'],
+  ['#4a044e', '#a21caf'],
+  ['#1e3a5f', '#2563eb'],
+];
+
+const GENDER_LABEL: Record<string, string> = {
+  male: 'Masculino',
+  female: 'Femenino',
+  mixed: 'Mixto',
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Teams() {
-  const { teams, loading } = useData();
+  const { user } = useAuth();
+
+  const [profileId, setProfileId]     = useState<string | null>(null);
+  const [ubicationId, setUbicationId] = useState<string | null>(null);
+
+  const [myTeams, setMyTeams]         = useState<Team[]>([]);
+  const [regionTeams, setRegionTeams] = useState<Team[]>([]);
+  const [myTorneos, setMyTorneos]     = useState<Torneo[]>([]);
+  const [loading, setLoading]         = useState(true);
+
+  const [tab, setTab]       = useState<'mine' | 'region'>('mine');
   const [search, setSearch] = useState('');
 
-  const filtered = teams.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.coach.toLowerCase().includes(search.toLowerCase())
-  );
+  // ── Create modal ──
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating]     = useState(false);
+  const [teamName, setTeamName]     = useState('');
+  const [teamGender, setTeamGender] = useState<string>('mixed');
+
+  // ── Add to torneo modal ──
+  const [addTarget, setAddTarget]               = useState<Team | null>(null);
+  const [selectedTorneoId, setSelectedTorneoId] = useState<string>('');
+  const [adding, setAdding]                     = useState(false);
+
+  // ── Guest players modal ──
+  const [playerTarget, setPlayerTarget]     = useState<Team | null>(null);
+  const [guestPlayers, setGuestPlayers]     = useState<GuestPlayer[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [showPlayerForm, setShowPlayerForm] = useState(false);
+  const [addingPlayer, setAddingPlayer]     = useState(false);
+  const [playerForm, setPlayerForm] = useState({
+    name: '', lastname: '', dominant_leg: '', gender: '', birth_year: '',
+  });
+
+  // 1. Fetch profile
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('PROFILE')
+      .select('id, ubication_id')
+      .eq('auth_id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data?.id)           setProfileId(data.id);
+        if (data?.ubication_id) setUbicationId(data.ubication_id);
+      });
+  }, [user?.id]);
+
+  // 2. Fetch teams + tournaments
+  useEffect(() => {
+    if (!profileId || !ubicationId) return;
+    const run = async () => {
+      setLoading(true);
+      try {
+        // Artificial teams I own (captain in PROFILE_TEAM + is_artificial)
+        const { data: pt } = await supabase
+          .from('PROFILE_TEAM')
+          .select('TEAM(*)')
+          .eq('profile_id', profileId)
+          .eq('team_role', 'captain');
+
+        setMyTeams(
+          (pt ?? []).map((r: any) => r.TEAM).filter((t: any) => t?.is_artificial === true) as Team[]
+        );
+
+        // Real teams in same ubication
+        const { data: reg } = await supabase
+          .from('TEAM')
+          .select('*')
+          .eq('ubication_id', ubicationId)
+          .eq('is_artificial', false);
+        setRegionTeams((reg ?? []) as Team[]);
+
+        // My tournaments (for adding teams)
+        const { data: adm } = await supabase
+          .from('TORNEO_ADMINS')
+          .select('TORNEO(id, name)')
+          .eq('profile_id', profileId);
+        setMyTorneos((adm ?? []).map((a: any) => a.TORNEO).filter(Boolean) as Torneo[]);
+
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [profileId, ubicationId]);
+
+  // 3. Load guest players when a team is selected
+  useEffect(() => {
+    if (!playerTarget) { setGuestPlayers([]); return; }
+    setLoadingPlayers(true);
+    supabase
+      .from('GUEST_PLAYER')
+      .select('*')
+      .eq('team_id', playerTarget.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        setGuestPlayers((data ?? []) as GuestPlayer[]);
+        setLoadingPlayers(false);
+      });
+  }, [playerTarget]);
+
+  const handleAddPlayer = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!playerTarget || !profileId || !playerForm.name.trim()) return;
+    setAddingPlayer(true);
+    try {
+      const { data: player, error } = await supabase
+        .from('GUEST_PLAYER')
+        .insert([{
+          team_id:      playerTarget.id,
+          added_by:     profileId,
+          name:         playerForm.name.trim(),
+          lastname:     playerForm.lastname.trim() || null,
+          dominant_leg: playerForm.dominant_leg || null,
+          gender:       playerForm.gender || null,
+          birth_year:   playerForm.birth_year ? Number(playerForm.birth_year) : null,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      toast.success(`${playerForm.name} añadido al equipo`);
+      setGuestPlayers(prev => [...prev, player as GuestPlayer]);
+      setPlayerForm({ name: '', lastname: '', dominant_leg: '', gender: '', birth_year: '' });
+      setShowPlayerForm(false);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Error al añadir jugador');
+    } finally {
+      setAddingPlayer(false);
+    }
+  };
+
+  const handleRemovePlayer = async (playerId: string) => {
+    const { error } = await supabase
+      .from('GUEST_PLAYER')
+      .update({ is_active: false })
+      .eq('id', playerId);
+    if (!error) setGuestPlayers(prev => prev.filter(p => p.id !== playerId));
+    else toast.error('Error al eliminar jugador');
+  };
+
+  const openPlayersModal = (team: Team) => {
+    setPlayerTarget(team);
+    setShowPlayerForm(false);
+    setPlayerForm({ name: '', lastname: '', dominant_leg: '', gender: '', birth_year: '' });
+  };
+
+  const handleCreateTeam = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!profileId || !ubicationId || !teamName.trim()) return;
+    setCreating(true);
+    try {
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const { data: team, error } = await supabase
+        .from('TEAM')
+        .insert([{
+          name: teamName.trim(),
+          ubication_id: ubicationId,
+          gender: teamGender,
+          code,
+          founded: new Date().toISOString(),
+          is_artificial: true,
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+
+      await supabase.from('PROFILE_TEAM').insert([{
+        team_id: team.id,
+        profile_id: profileId,
+        team_role: 'captain',
+        status: true,
+      }]);
+
+      toast.success(`Equipo "${teamName}" creado`);
+      setMyTeams(prev => [team as Team, ...prev]);
+      setShowCreate(false);
+      setTeamName('');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Error al crear el equipo');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleAddToTorneo = async () => {
+    if (!addTarget || !selectedTorneoId) return;
+    setAdding(true);
+    try {
+      if (addTarget.is_artificial) {
+        // Direct insert — we fully control artificial teams
+        const { error } = await supabase.from('TORNEO_TEAMS').insert([{
+          team_id: addTarget.id,
+          torneo_id: selectedTorneoId,
+          status: 'confirmed',
+        }]);
+        if (error) throw error;
+      } else {
+        // Use RPC for real teams (validates by code, respects team logic)
+        const { error } = await supabase.rpc('register_team_to_tournament', {
+          p_torneo_id: selectedTorneoId,
+          p_code_team: addTarget.code,
+        });
+        if (error) throw error;
+      }
+      toast.success(`${addTarget.name} añadido al torneo`);
+      setAddTarget(null);
+      setSelectedTorneoId('');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Error al añadir al torneo');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const openAddModal = (team: Team) => {
+    setAddTarget(team);
+    setSelectedTorneoId(myTorneos[0]?.id ?? '');
+  };
+
+  const list = (tab === 'mine' ? myTeams : regionTeams)
+    .filter(t => (t.name ?? '').toLowerCase().includes(search.toLowerCase()));
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6 max-w-7xl">
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <style>{`
+          @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.5} }
+          @keyframes fadeIn { from{opacity:0;transform:scale(.97)} to{opacity:1;transform:scale(1)} }
+          .t-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+          .t-card:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
+        `}</style>
+
+        {/* ─── HEADER ─────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>Equipos</h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
-              Gestiona todos los equipos de tus torneos
-            </p>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Gestión</div>
+            <h1 style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>Equipos</h1>
           </div>
-          <CreateTeamModal />
+          {tab === 'mine' && (
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', fontFamily: "'Barlow Condensed', sans-serif" }}
+            >
+              <Plus size={16} /> Crear equipo
+            </button>
+          )}
         </div>
 
-        {/* Search */}
-        <div
-          className="flex items-center gap-3 px-4 py-3 rounded-xl max-w-md"
-          style={{
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-          }}
-        >
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: 'var(--primary-light)' }}
-          >
-            <Search className="h-3.5 w-3.5" style={{ color: 'var(--primary)' }} />
-          </div>
+        {/* ─── TABS ───────────────────────────────────────── */}
+        <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', width: 'fit-content' }}>
+          {([
+            { key: 'mine',   label: 'Mis equipos', count: myTeams.length },
+            { key: 'region', label: 'Región',       count: regionTeams.length },
+          ] as const).map(t => {
+            const active = tab === t.key;
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{
+                padding: '9px 18px', borderRadius: 11, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                letterSpacing: 0.4, textTransform: 'uppercase', fontFamily: "'Barlow Condensed', sans-serif",
+                background: active ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'transparent',
+                color:      active ? '#fff' : 'rgba(255,255,255,0.4)',
+                boxShadow:  active ? '0 2px 10px rgba(22,163,74,0.25)' : 'none',
+                transition: 'all 0.18s ease', display: 'flex', alignItems: 'center', gap: 7,
+              }}>
+                {t.label}
+                {!loading && t.count > 0 && (
+                  <span style={{ fontSize: 11, background: active ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)', borderRadius: 20, padding: '1px 7px' }}>{t.count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ─── SEARCH ─────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: '#0d1117', border: '1px solid rgba(255,255,255,0.08)', maxWidth: 360 }}>
+          <Search size={15} color="rgba(255,255,255,0.3)" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar equipos..."
-            className="flex-1 outline-none bg-transparent text-sm"
-            style={{ color: 'var(--foreground)' }}
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#f1f5f9', fontSize: 14, fontFamily: "'Barlow', sans-serif" }}
           />
         </div>
 
-        {/* Grid */}
-        {loading ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div
-                key={i}
-                className="rounded-2xl p-5 animate-pulse"
-                style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-              >
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 rounded-full" style={{ background: 'var(--surface-high)' }} />
-                  <div className="space-y-2">
-                    <div className="h-3 rounded-full w-28" style={{ background: 'var(--surface-high)' }} />
-                    <div className="h-3 rounded-full w-16" style={{ background: 'var(--surface-high)' }} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="h-3 rounded-full" style={{ background: 'var(--surface-high)' }} />
-                  <div className="h-3 rounded-full w-3/4" style={{ background: 'var(--surface-high)' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filtered.map(team => (
-              <Link
-                key={team.id}
-                to={`/teams/${team.id}`}
-                className="rounded-2xl p-5 block group transition-all"
-                style={{
-                  background: 'var(--card)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 8px 24px rgba(37,99,235,0.12)')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)')}
-              >
-                {/* Team header */}
-                <div className="flex items-center gap-4 mb-5">
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
-                    style={{ background: 'var(--surface-high)', border: '1px solid var(--border)' }}
-                  >
-                    {team.logo}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-base truncate group-hover:text-[var(--primary)] transition-colors" style={{ color: 'var(--foreground)' }}>
-                      {team.name}
-                    </h3>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
-                      Fundado: {team.foundedYear}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Info rows */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: 'var(--muted-foreground)' }}>Entrenador</span>
-                    <span className="font-semibold" style={{ color: 'var(--foreground)' }}>{team.coach}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: 'var(--muted-foreground)' }}>Jugadores</span>
-                    <span className="font-semibold" style={{ color: 'var(--foreground)' }}>
-                      <Users className="h-3 w-3 inline mr-1" />{team.players}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Stats bar */}
-                <div
-                  className="pt-4 grid grid-cols-3 gap-2"
-                  style={{ borderTop: '1px solid var(--border)' }}
-                >
-                  <div
-                    className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'var(--primary-light)' }}
-                  >
-                    <p className="text-xl font-bold" style={{ color: 'var(--primary)' }}>{team.wins}</p>
-                    <p className="text-xs font-medium" style={{ color: 'var(--primary)' }}>V</p>
-                  </div>
-                  <div
-                    className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'var(--warning-light)' }}
-                  >
-                    <p className="text-xl font-bold" style={{ color: 'var(--warning)' }}>{team.draws}</p>
-                    <p className="text-xs font-medium" style={{ color: 'var(--warning)' }}>E</p>
-                  </div>
-                  <div
-                    className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'var(--destructive-light)' }}
-                  >
-                    <p className="text-xl font-bold" style={{ color: 'var(--destructive)' }}>{team.losses}</p>
-                    <p className="text-xs font-medium" style={{ color: 'var(--destructive)' }}>D</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
-
-            {filtered.length === 0 && (
-              <div
-                className="col-span-3 rounded-2xl p-12 flex flex-col items-center justify-center gap-3"
-                style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-              >
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'var(--surface-high)' }}>
-                  <Users className="h-7 w-7" style={{ color: 'var(--muted-foreground)' }} />
-                </div>
-                <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>No se encontraron equipos</p>
-                <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Prueba con otro término de búsqueda</p>
-              </div>
-            )}
+        {/* ─── SECTION LABEL ──────────────────────────────── */}
+        {!loading && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.25)', letterSpacing: 2, textTransform: 'uppercase' }}>
+            {tab === 'mine'
+              ? `Equipos artificiales que administras · ${myTeams.length}`
+              : `Equipos reales de tu zona · ${regionTeams.length}`}
           </div>
         )}
+
+        {/* ─── CONTENT ────────────────────────────────────── */}
+        {loading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+            {[1,2,3,4].map(i => (
+              <div key={i} style={{ borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(255,255,255,0.06)', animation: 'pulse 1.5s ease infinite' }} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ height: 14, borderRadius: 6, width: '60%', background: 'rgba(255,255,255,0.06)', animation: 'pulse 1.5s ease infinite' }} />
+                    <div style={{ height: 11, borderRadius: 6, width: '40%', background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease infinite' }} />
+                  </div>
+                </div>
+                <div style={{ height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease infinite' }} />
+              </div>
+            ))}
+          </div>
+
+        ) : list.length === 0 ? (
+          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px dashed rgba(255,255,255,0.1)', padding: '64px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 60, height: 60, borderRadius: 18, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Users size={24} color="rgba(255,255,255,0.18)" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 900, color: '#f1f5f9', marginBottom: 6 }}>
+                {tab === 'mine' ? 'Aún no tienes equipos' : 'Sin equipos en la región'}
+              </h3>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif" }}>
+                {tab === 'mine'
+                  ? 'Crea equipos artificiales para usar en tus torneos'
+                  : 'No hay equipos reales registrados en tu zona aún'}
+              </p>
+            </div>
+          </div>
+
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+            {list.map((team, i) => {
+              const [fromC, toC] = TEAM_COLORS[i % TEAM_COLORS.length];
+              const initial = (team.name ?? '?')[0].toUpperCase();
+              return (
+                <div key={team.id} className="t-card" style={{ borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.25)', position: 'relative', overflow: 'hidden' }}>
+
+                  {/* Artificial badge */}
+                  {team.is_artificial && (
+                    <div style={{ position: 'absolute', top: 14, right: 14, fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.25)', color: '#f59e0b', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                      Artificial
+                    </div>
+                  )}
+
+                  {/* Avatar + name */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: `linear-gradient(135deg, ${fromC}, ${toC})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                      {initial}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: team.is_artificial ? 60 : 0 }}>
+                      <h3 style={{ fontSize: 18, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.3, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {team.name}
+                      </h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {team.gender && (
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
+                            {GENDER_LABEL[team.gender] ?? team.gender}
+                          </span>
+                        )}
+                        {team.code && (
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: 1, background: 'rgba(255,255,255,0.04)', padding: '1px 7px', borderRadius: 6 }}>
+                            #{team.code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Founded */}
+                  {team.founded && (
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif" }}>
+                      Fundado: {new Date(team.founded).toLocaleDateString('es-ES', { year: 'numeric', month: 'short' })}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 14 }}>
+                    {tab === 'mine' ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => openPlayersModal(team)}
+                          style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.07)', cursor: 'pointer', color: '#a78bfa', fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.18s ease' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(139,92,246,0.14)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(139,92,246,0.07)')}
+                        >
+                          <Users size={13} /> Jugadores
+                        </button>
+                        <button
+                          onClick={() => openAddModal(team)}
+                          style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(22,163,74,0.25)', background: 'rgba(22,163,74,0.07)', cursor: 'pointer', color: '#22c55e', fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.18s ease' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(22,163,74,0.14)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(22,163,74,0.07)')}
+                        >
+                          <Trophy size={13} /> Torneo
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openAddModal(team)}
+                        style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1px solid rgba(37,99,235,0.25)', background: 'rgba(37,99,235,0.07)', cursor: 'pointer', color: '#60a5fa', fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'background 0.18s ease' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(37,99,235,0.14)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(37,99,235,0.07)')}
+                      >
+                        <Shield size={13} /> Registrar en torneo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ─── CREATE TEAM MODAL ──────────────────────────── */}
+        {showCreate && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setShowCreate(false); }}
+          >
+            <div style={{ width: '100%', maxWidth: 420, background: '#0d1117', borderRadius: 22, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)', animation: 'fadeIn 0.2s ease', overflow: 'hidden' }}>
+
+              <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>Nuevo</div>
+                  <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5 }}>Crear equipo</h2>
+                </div>
+                <button onClick={() => setShowCreate(false)}
+                  style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateTeam}>
+                <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Nombre *</label>
+                    <input
+                      type="text"
+                      value={teamName}
+                      onChange={e => setTeamName(e.target.value)}
+                      placeholder="Ej: Leones del Norte"
+                      required
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#f1f5f9', fontSize: 14, fontFamily: "'Barlow', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+                      onFocus={e => (e.target.style.borderColor = '#22c55e')}
+                      onBlur={e  => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Género</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {([{ value: 'male', label: 'Masculino' }, { value: 'female', label: 'Femenino' }, { value: 'mixed', label: 'Mixto' }] as const).map(opt => (
+                        <button key={opt.value} type="button" onClick={() => setTeamGender(opt.value)}
+                          style={{ flex: 1, padding: 9, borderRadius: 10, cursor: 'pointer', background: teamGender === opt.value ? 'rgba(22,163,74,0.12)' : 'rgba(255,255,255,0.03)', border: teamGender === opt.value ? '1.5px solid #22c55e' : '1.5px solid rgba(255,255,255,0.08)', color: teamGender === opt.value ? '#22c55e' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Artificial notice */}
+                  <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,119,6,0.07)', border: '1px solid rgba(217,119,6,0.18)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: '#f59e0b', flexShrink: 0 }}>!</span>
+                    <p style={{ fontSize: 12, color: 'rgba(245,158,11,0.75)', fontFamily: "'Barlow', sans-serif", lineHeight: 1.5, margin: 0 }}>
+                      Este equipo será <strong>artificial</strong> — invisible en la app móvil para usuarios reales.
+                    </p>
+                  </div>
+
+                </div>
+
+                <div style={{ padding: '14px 24px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 10 }}>
+                  <button type="button" onClick={() => setShowCreate(false)}
+                    style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={creating}
+                    style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', cursor: creating ? 'not-allowed' : 'pointer', background: creating ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #16a34a, #15803d)', color: creating ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 14, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, boxShadow: creating ? 'none' : '0 4px 14px rgba(22,163,74,0.25)' }}>
+                    {creating ? 'Creando...' : 'Crear equipo'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── ADD TO TORNEO MODAL ────────────────────────── */}
+        {addTarget && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setAddTarget(null); }}
+          >
+            <div style={{ width: '100%', maxWidth: 400, background: '#0d1117', borderRadius: 22, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)', animation: 'fadeIn 0.2s ease', overflow: 'hidden' }}>
+
+              <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>
+                    {addTarget.is_artificial ? 'Añadir a torneo' : 'Registrar en torneo'}
+                  </div>
+                  <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.3, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {addTarget.name}
+                  </h2>
+                </div>
+                <button onClick={() => setAddTarget(null)}
+                  style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div style={{ padding: '20px 24px' }}>
+                {myTorneos.length === 0 ? (
+                  <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif", textAlign: 'center', padding: '20px 0' }}>
+                    No tienes torneos. Crea uno primero en la sección Torneos.
+                  </p>
+                ) : (
+                  <>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>
+                      Selecciona el torneo
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+                      {myTorneos.map(t => (
+                        <button key={t.id} type="button" onClick={() => setSelectedTorneoId(t.id)}
+                          style={{ padding: '12px 14px', borderRadius: 12, cursor: 'pointer', background: selectedTorneoId === t.id ? 'rgba(22,163,74,0.12)' : 'rgba(255,255,255,0.03)', border: selectedTorneoId === t.id ? '1.5px solid #22c55e' : '1.5px solid rgba(255,255,255,0.08)', color: selectedTorneoId === t.id ? '#22c55e' : '#f1f5f9', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.15s ease' }}>
+                          <Trophy size={14} color={selectedTorneoId === t.id ? '#22c55e' : 'rgba(255,255,255,0.25)'} />
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => setAddTarget(null)}
+                        style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
+                        Cancelar
+                      </button>
+                      <button onClick={handleAddToTorneo} disabled={adding || !selectedTorneoId}
+                        style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', cursor: (adding || !selectedTorneoId) ? 'not-allowed' : 'pointer', background: (adding || !selectedTorneoId) ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #16a34a, #15803d)', color: (adding || !selectedTorneoId) ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 14, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, boxShadow: (adding || !selectedTorneoId) ? 'none' : '0 4px 14px rgba(22,163,74,0.25)' }}>
+                        {adding ? 'Añadiendo...' : addTarget.is_artificial ? 'Añadir' : 'Registrar'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── GUEST PLAYERS MODAL ────────────────────────── */}
+        {playerTarget && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setPlayerTarget(null); }}
+          >
+            <div style={{ width: '100%', maxWidth: 480, background: '#0d1117', borderRadius: 22, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)', animation: 'fadeIn 0.2s ease', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
+
+              {/* Header */}
+              <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(139,92,246,0.7)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>Jugadores artificiales</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.3, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {playerTarget.name}
+                  </h2>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => setShowPlayerForm(v => !v)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', background: showPlayerForm ? 'rgba(139,92,246,0.2)' : 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff', fontSize: 12, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 }}
+                  >
+                    {showPlayerForm ? <ChevronUp size={14} /> : <UserPlus size={14} />}
+                    {showPlayerForm ? 'Cerrar' : 'Añadir'}
+                  </button>
+                  <button onClick={() => setPlayerTarget(null)}
+                    style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Add player form (collapsible) */}
+              {showPlayerForm && (
+                <form onSubmit={handleAddPlayer} style={{ padding: '16px 24px', borderBottom: '1px solid rgba(139,92,246,0.15)', background: 'rgba(139,92,246,0.05)', flexShrink: 0 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Nombre *</label>
+                      <input
+                        type="text"
+                        value={playerForm.name}
+                        onChange={e => setPlayerForm(p => ({ ...p, name: e.target.value }))}
+                        placeholder="Juan"
+                        required
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#f1f5f9', fontSize: 13, fontFamily: "'Barlow', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => (e.target.style.borderColor = '#7c3aed')}
+                        onBlur={e  => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Apellido</label>
+                      <input
+                        type="text"
+                        value={playerForm.lastname}
+                        onChange={e => setPlayerForm(p => ({ ...p, lastname: e.target.value }))}
+                        placeholder="Pérez"
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#f1f5f9', fontSize: 13, fontFamily: "'Barlow', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => (e.target.style.borderColor = '#7c3aed')}
+                        onBlur={e  => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    {/* Pierna */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Pierna</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {([{ v: 'right', l: 'Der.' }, { v: 'left', l: 'Izq.' }] as const).map(o => (
+                          <button key={o.v} type="button" onClick={() => setPlayerForm(p => ({ ...p, dominant_leg: p.dominant_leg === o.v ? '' : o.v }))}
+                            style={{ flex: 1, padding: '7px 4px', borderRadius: 8, cursor: 'pointer', background: playerForm.dominant_leg === o.v ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.03)', border: playerForm.dominant_leg === o.v ? '1.5px solid #7c3aed' : '1.5px solid rgba(255,255,255,0.08)', color: playerForm.dominant_leg === o.v ? '#a78bfa' : 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif" }}>
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Género */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Género</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {([{ v: 'male', l: 'M' }, { v: 'female', l: 'F' }] as const).map(o => (
+                          <button key={o.v} type="button" onClick={() => setPlayerForm(p => ({ ...p, gender: p.gender === o.v ? '' : o.v }))}
+                            style={{ flex: 1, padding: '7px 4px', borderRadius: 8, cursor: 'pointer', background: playerForm.gender === o.v ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.03)', border: playerForm.gender === o.v ? '1.5px solid #7c3aed' : '1.5px solid rgba(255,255,255,0.08)', color: playerForm.gender === o.v ? '#a78bfa' : 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif" }}>
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Año */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Año nac.</label>
+                      <input
+                        type="number"
+                        value={playerForm.birth_year}
+                        onChange={e => setPlayerForm(p => ({ ...p, birth_year: e.target.value }))}
+                        placeholder="1995"
+                        min={1950} max={2015}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#f1f5f9', fontSize: 13, fontFamily: "'Barlow', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => (e.target.style.borderColor = '#7c3aed')}
+                        onBlur={e  => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                      />
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={addingPlayer}
+                    style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', cursor: addingPlayer ? 'not-allowed' : 'pointer', background: addingPlayer ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: addingPlayer ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 13, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, boxShadow: addingPlayer ? 'none' : '0 3px 12px rgba(124,58,237,0.3)' }}>
+                    {addingPlayer ? 'Guardando...' : 'Guardar jugador'}
+                  </button>
+                </form>
+              )}
+
+              {/* Player list */}
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {loadingPlayers ? (
+                  <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[1,2,3].map(i => (
+                      <div key={i} style={{ height: 48, borderRadius: 12, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease infinite' }} />
+                    ))}
+                  </div>
+                ) : guestPlayers.length === 0 ? (
+                  <div style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Users size={20} color="rgba(139,92,246,0.5)" />
+                    </div>
+                    <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif" }}>
+                      Este equipo no tiene jugadores aún
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px 24px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.25)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>
+                      {guestPlayers.length} {guestPlayers.length === 1 ? 'jugador' : 'jugadores'}
+                    </div>
+                    {guestPlayers.map((p, i) => (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        {/* Number */}
+                        <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.2)', width: 20, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+
+                        {/* Avatar */}
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg, ${TEAM_COLORS[i % TEAM_COLORS.length][0]}, ${TEAM_COLORS[i % TEAM_COLORS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                          {p.name[0].toUpperCase()}
+                        </div>
+
+                        {/* Name + meta */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {p.name} {p.lastname ?? ''}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                            {p.dominant_leg && (
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
+                                {p.dominant_leg === 'right' ? 'Der.' : 'Izq.'}
+                              </span>
+                            )}
+                            {p.gender && (
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
+                                {p.gender === 'male' ? 'M' : 'F'}
+                              </span>
+                            )}
+                            {p.birth_year && (
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
+                                {p.birth_year}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Remove */}
+                        <button
+                          onClick={() => handleRemovePlayer(p.id)}
+                          style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(239,68,68,0.6)', flexShrink: 0, transition: 'all 0.15s ease' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.16)'; e.currentTarget.style.color = '#ef4444'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.color = 'rgba(239,68,68,0.6)'; }}
+                          title="Eliminar jugador"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </DashboardLayout>
   );

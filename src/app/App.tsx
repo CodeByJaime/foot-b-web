@@ -9,8 +9,6 @@ import Tournaments from './pages/Tournaments';
 import TournamentDetail from './pages/TournamentDetail';
 import Teams from './pages/Teams';
 import TeamDetail from './pages/TeamDetail';
-import Players from './pages/Players';
-import Matches from './pages/Matches';
 import Standings from './pages/Standings';
 import Brackets from './pages/Brackets';
 import AuthPage from './pages/AuthPage';
@@ -98,14 +96,11 @@ function App() {
               <Route path="/teams/:id" element={
                 <ProtectedRoute><TeamDetail /></ProtectedRoute>
               } />
-              <Route path="/players" element={
-                <ProtectedRoute><Players /></ProtectedRoute>
-              } />
-              <Route path="/matches" element={
-                <ProtectedRoute><Matches /></ProtectedRoute>
-              } />
               <Route path="/standings/:tournamentId" element={
                 <ProtectedRoute><Standings /></ProtectedRoute>
+              } />
+              <Route path="/brackets" element={
+                <ProtectedRoute><Brackets /></ProtectedRoute>
               } />
               <Route path="/brackets/:tournamentId" element={
                 <ProtectedRoute><Brackets /></ProtectedRoute>
