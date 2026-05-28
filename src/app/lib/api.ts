@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { projectId } from "../../../utils/supabase/info";
 import type { Tournament, Team, Player, Match, Standing } from "../data/mockData";
 
 // ── row mappers (DB snake_case → TS camelCase) ────────────────────────────────
@@ -98,16 +97,6 @@ function toStanding(r: Record<string, unknown>): Standing {
 
 function raise(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
-}
-
-// ── seed (Edge Function uses service_role to insert seed rows) ────────────────
-
-const EDGE = `https://${projectId}.supabase.co/functions/v1/server`;
-
-export async function seedData(): Promise<{ seeded: boolean }> {
-  const res = await fetch(`${EDGE}/seed`, { method: "POST" });
-  if (!res.ok) return { seeded: false };
-  return res.json();
 }
 
 // ── tournaments → TORNEO ──────────────────────────────────────────────────────

@@ -41,7 +41,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      await api.seedData();
       const [t, te, p, m] = await Promise.all([
         api.getTournaments(),
         api.getTeams(),
