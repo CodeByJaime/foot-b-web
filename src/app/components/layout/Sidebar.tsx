@@ -5,6 +5,7 @@ import {
   Users,
   BarChart3,
   CalendarRange,
+  ClipboardList,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +16,7 @@ const menuItems = [
   { icon: Users,           label: 'Equipos',       path: '/teams'       },
   { icon: BarChart3,       label: 'Estadísticas',  path: '/standings/1' },
   { icon: CalendarRange,   label: 'Cronograma',    path: '/brackets'    },
+  { icon: ClipboardList,   label: 'Partidos',      path: '/matches'     },
 ];
 
 export default function Sidebar() {

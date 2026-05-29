@@ -11,6 +11,7 @@ import Teams from './pages/Teams';
 import TeamDetail from './pages/TeamDetail';
 import Standings from './pages/Standings';
 import Brackets from './pages/Brackets';
+import MatchesPage from './pages/Matches';
 import AuthPage from './pages/AuthPage';
 import type { ReactNode } from 'react';
 
@@ -104,6 +105,12 @@ function App() {
               } />
               <Route path="/brackets/:tournamentId" element={
                 <ProtectedRoute><Brackets /></ProtectedRoute>
+              } />
+              <Route path="/matches" element={
+                <ProtectedRoute><MatchesPage /></ProtectedRoute>
+              } />
+              <Route path="/matches/:tournamentId" element={
+                <ProtectedRoute><MatchesPage /></ProtectedRoute>
               } />
 
               {/* ── Fallback ── */}
