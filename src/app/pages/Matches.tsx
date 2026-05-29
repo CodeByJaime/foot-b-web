@@ -56,12 +56,6 @@ function formatDate(d: string | null) {
   } catch { return null; }
 }
 
-function toInputDate(d: string | null) {
-  if (!d) return '';
-  try { return new Date(d).toISOString().slice(0, 16); }
-  catch { return ''; }
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MatchesPage() {
@@ -86,9 +80,6 @@ export default function MatchesPage() {
 
   // Edit modal
   const [editMatch,   setEditMatch]   = useState<Match | null>(null);
-  const [editDate,    setEditDate]    = useState('');
-  const [editPlace,   setEditPlace]   = useState('');
-  const [editReferee, setEditReferee] = useState('');
   const [editStatus,  setEditStatus]  = useState('');
   const [editHome,    setEditHome]    = useState('');
   const [editAway,    setEditAway]    = useState('');
@@ -172,9 +163,6 @@ export default function MatchesPage() {
   // ── Edit modal ─────────────────────────────────────────────────────────────
   const openEdit = (m: Match) => {
     setEditMatch(m);
-    setEditDate(toInputDate(m.date));
-    setEditPlace(m.place ?? '');
-    setEditReferee(m.referee ?? '');
     setEditStatus(m.status ?? 'scheduled');
     setEditHome(m.home_score?.toString() ?? '');
     setEditAway(m.away_score?.toString() ?? '');
@@ -183,12 +171,7 @@ export default function MatchesPage() {
   const handleSave = async () => {
     if (!editMatch || !validId) return;
     setSaving(true);
-    const update: any = {
-      place:   editPlace.trim() || null,
-      referee: editReferee.trim() || null,
-      status:  editStatus,
-    };
-    if (editDate) update.date = new Date(editDate).toISOString();
+    const update: any = { status: editStatus };
     if (editStatus === 'finished' || editStatus === 'live') {
       const hs = parseInt(editHome, 10);
       const as_ = parseInt(editAway, 10);
@@ -600,33 +583,6 @@ export default function MatchesPage() {
                   </div>
                 </div>
               )}
-
-              {/* Date */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Fecha y hora</label>
-                <div style={{ position: 'relative' }}>
-                  <Calendar size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                  <input type="datetime-local" value={editDate} onChange={e => setEditDate(e.target.value)} style={{ ...inputStyle, paddingLeft: 34, colorScheme: 'dark' }} />
-                </div>
-              </div>
-
-              {/* Place */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Lugar / Cancha</label>
-                <div style={{ position: 'relative' }}>
-                  <MapPin size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                  <input type="text" value={editPlace} onChange={e => setEditPlace(e.target.value)} placeholder="Estadio, cancha, dirección..." style={{ ...inputStyle, paddingLeft: 34 }} />
-                </div>
-              </div>
-
-              {/* Referee */}
-              <div style={{ marginBottom: 22 }}>
-                <label style={labelStyle}>Árbitro</label>
-                <div style={{ position: 'relative' }}>
-                  <User size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                  <input type="text" value={editReferee} onChange={e => setEditReferee(e.target.value)} placeholder="Nombre del árbitro" style={{ ...inputStyle, paddingLeft: 34 }} />
-                </div>
-              </div>
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: 10 }}>

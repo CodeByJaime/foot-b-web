@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   CalendarRange, Trophy, RefreshCw, ArrowLeftRight, Layers,
   Users, ChevronRight, AlertTriangle, X, ExternalLink,
+  Calendar, MapPin, User,
 } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { supabase } from '../lib/supabase';
@@ -28,6 +29,9 @@ interface StageMatch {
   status: string;
   home_score?: number | null;
   away_score?: number | null;
+  date?: string | null;
+  place?: string | null;
+  referee?: string | null;
 }
 
 interface Stage {
@@ -81,6 +85,21 @@ function generateKnockoutRounds(teams: Team[]): { home: Team | null; away: Team 
   return rounds;
 }
 
+function formatDate(d: string | null | undefined) {
+  if (!d) return null;
+  try {
+    return new Date(d).toLocaleString('es-CO', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return null; }
+}
+
+function toInputDate(d: string | null | undefined) {
+  if (!d) return '';
+  try { return new Date(d).toISOString().slice(0, 16); }
+  catch { return ''; }
+}
+
 function knockoutRoundLabel(totalRounds: number, roundIndex: number): string {
   const fromEnd = totalRounds - roundIndex;
   if (fromEnd === 1) return 'Final';
@@ -113,32 +132,60 @@ function getPreviewStats(format: FixtureFormat, n: number) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function MatchCard({ match, teamMap }: { match: StageMatch; teamMap: Record<string, Team> }) {
+function MatchCard({ match, teamMap, onClick }: { match: StageMatch; teamMap: Record<string, Team>; onClick?: () => void }) {
   const home = teamMap[match.home_team_id ?? ''];
   const away = teamMap[match.away_team_id ?? ''];
   const hasScore = match.home_score != null && match.away_score != null;
   const pending  = match.status === 'pending' && !home && !away;
   const isDone   = match.status === 'finished';
+  const canEdit  = !!(home || away) && !!onClick;
+  const dateStr  = formatDate(match.date);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <p style={{ fontSize: 14, fontWeight: 800, color: home ? '#fff' : 'rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, textAlign: 'right', lineHeight: 1.2 }}>
-        {home?.name ?? '—'}
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 56, flexShrink: 0 }}>
-        {hasScore ? (
-          <span style={{ fontSize: 16, fontWeight: 900, color: isDone ? 'rgba(255,255,255,0.6)' : '#22c55e', letterSpacing: 2 }}>
-            {match.home_score} — {match.away_score}
-          </span>
-        ) : pending ? (
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: "'Barlow', sans-serif", letterSpacing: 1, textTransform: 'uppercase' }}>TBD</span>
-        ) : (
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif", letterSpacing: 1 }}>vs</span>
-        )}
+    <div
+      onClick={() => canEdit && onClick?.()}
+      style={{ borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', cursor: canEdit ? 'pointer' : 'default', overflow: 'hidden', transition: 'border-color 0.15s' }}
+      onMouseEnter={e => { if (canEdit) (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.13)'; }}
+      onMouseLeave={e => { if (canEdit) (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.06)'; }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+        <p style={{ fontSize: 14, fontWeight: 800, color: home ? '#fff' : 'rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, textAlign: 'right', lineHeight: 1.2 }}>
+          {home?.name ?? '—'}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 56, flexShrink: 0 }}>
+          {hasScore ? (
+            <span style={{ fontSize: 16, fontWeight: 900, color: isDone ? 'rgba(255,255,255,0.6)' : '#22c55e', letterSpacing: 2 }}>
+              {match.home_score} — {match.away_score}
+            </span>
+          ) : pending ? (
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: "'Barlow', sans-serif", letterSpacing: 1, textTransform: 'uppercase' }}>TBD</span>
+          ) : (
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif", letterSpacing: 1 }}>vs</span>
+          )}
+        </div>
+        <p style={{ fontSize: 14, fontWeight: 800, color: away ? '#fff' : 'rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, textAlign: 'left', lineHeight: 1.2 }}>
+          {away?.name ?? '—'}
+        </p>
       </div>
-      <p style={{ fontSize: 14, fontWeight: 800, color: away ? '#fff' : 'rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, textAlign: 'left', lineHeight: 1.2 }}>
-        {away?.name ?? '—'}
-      </p>
+      {(dateStr || match.place || match.referee) && (
+        <div style={{ display: 'flex', gap: 12, padding: '0 14px 8px', flexWrap: 'wrap' }}>
+          {dateStr && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif" }}>
+              <Calendar size={10} />{dateStr}
+            </span>
+          )}
+          {match.place && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif" }}>
+              <MapPin size={10} />{match.place}
+            </span>
+          )}
+          {match.referee && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif" }}>
+              <User size={10} />{match.referee}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -165,6 +212,13 @@ export default function Cronograma() {
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [error,     setError]     = useState<string | null>(null);
+
+  // ── match info edit modal ────────────────────────────────────────────────
+  const [editMatch,   setEditMatch]   = useState<StageMatch | null>(null);
+  const [editDate,    setEditDate]    = useState('');
+  const [editPlace,   setEditPlace]   = useState('');
+  const [editReferee, setEditReferee] = useState('');
+  const [saving,      setSaving]      = useState(false);
 
   // ── active knockout round per stage ──────────────────────────────────────
   const [koRound, setKoRound] = useState<Record<string, number>>({});
@@ -206,7 +260,7 @@ export default function Cronograma() {
       const stageIds = stg.map((s: any) => s.id);
 
       const [{ data: matchData }, { data: groupData }] = await Promise.all([
-        supabase.from('MATCH').select('id,stage_id,home_team_id,away_team_id,match_round,group_id,status,home_score,away_score').in('stage_id', stageIds).order('match_round'),
+        supabase.from('MATCH').select('id,stage_id,home_team_id,away_team_id,match_round,group_id,status,home_score,away_score,date,place,referee').in('stage_id', stageIds).order('match_round'),
         supabase.from('TORNEO_GROUP').select('id, name, stage_id').in('stage_id', stageIds).order('name'),
       ]);
 
@@ -318,6 +372,31 @@ export default function Cronograma() {
   };
 
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
+
+  const openEdit = (m: StageMatch) => {
+    const home = teamMap[m.home_team_id ?? ''];
+    const away = teamMap[m.away_team_id ?? ''];
+    if (!home && !away) return;
+    setEditMatch(m);
+    setEditDate(toInputDate(m.date));
+    setEditPlace(m.place ?? '');
+    setEditReferee(m.referee ?? '');
+  };
+
+  const handleSaveMatchInfo = async () => {
+    if (!editMatch || !validId) return;
+    setSaving(true);
+    const update: any = {
+      place:   editPlace.trim() || null,
+      referee: editReferee.trim() || null,
+      date:    editDate ? new Date(editDate).toISOString() : null,
+    };
+    const { error: e } = await supabase.from('MATCH').update(update).eq('id', editMatch.id);
+    if (e) setError(e.message);
+    setEditMatch(null);
+    await loadTournament(validId);
+    setSaving(false);
+  };
   const hasFixture = stages.length > 0;
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -574,7 +653,7 @@ export default function Cronograma() {
                               Jornada {round}
                             </p>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {byRound[round].map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} />)}
+                              {byRound[round].map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} onClick={() => openEdit(m)} />)}
                             </div>
                           </div>
                         ))}
@@ -603,7 +682,7 @@ export default function Cronograma() {
                           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', fontFamily: "'Barlow', sans-serif" }}>{byRound[round].length} {byRound[round].length === 1 ? 'partido' : 'partidos'}</span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {byRound[round].map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} />)}
+                          {byRound[round].map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} onClick={() => openEdit(m)} />)}
                         </div>
                       </div>
                     ))}
@@ -665,7 +744,7 @@ export default function Cronograma() {
                           </p>
                         </div>
                       ) : (
-                        activeMatches.map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} />)
+                        activeMatches.map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} onClick={() => openEdit(m)} />)
                       )}
                     </div>
                   </>
@@ -695,6 +774,82 @@ export default function Cronograma() {
           </div>
         )}
       </div>
+
+      {/* ── Match info edit modal ──────────────────────────────────────────── */}
+      {editMatch && (() => {
+        const home = teamMap[editMatch.home_team_id ?? ''];
+        const away = teamMap[editMatch.away_team_id ?? ''];
+        const inputStyle: React.CSSProperties = {
+          width: '100%', padding: '10px 14px', borderRadius: 10, outline: 'none',
+          background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+          color: '#fff', fontSize: 14, fontFamily: "'Barlow', sans-serif", boxSizing: 'border-box',
+        };
+        const labelStyle: React.CSSProperties = {
+          fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5,
+          textTransform: 'uppercase', marginBottom: 6, display: 'block',
+          fontFamily: "'Barlow', sans-serif",
+        };
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+            onClick={() => setEditMatch(null)}
+          >
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }} />
+            <div
+              style={{ position: 'relative', background: '#0d1117', borderRadius: 20, padding: '26px 22px', border: '1px solid rgba(255,255,255,0.1)', maxWidth: 420, width: '100%', zIndex: 1, fontFamily: fontStack }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22 }}>
+                <p style={{ fontSize: 17, fontWeight: 900, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, margin: 0, lineHeight: 1.2 }}>
+                  {home?.name ?? '—'} <span style={{ color: 'rgba(255,255,255,0.3)' }}>vs</span> {away?.name ?? '—'}
+                </p>
+                <button onClick={() => setEditMatch(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', display: 'flex', padding: 4 }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Date */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Fecha y hora</label>
+                <div style={{ position: 'relative' }}>
+                  <Calendar size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input type="datetime-local" value={editDate} onChange={e => setEditDate(e.target.value)} style={{ ...inputStyle, paddingLeft: 34, colorScheme: 'dark' }} />
+                </div>
+              </div>
+
+              {/* Place */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Lugar / Cancha</label>
+                <div style={{ position: 'relative' }}>
+                  <MapPin size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input type="text" value={editPlace} onChange={e => setEditPlace(e.target.value)} placeholder="Estadio, cancha, dirección..." style={{ ...inputStyle, paddingLeft: 34 }} />
+                </div>
+              </div>
+
+              {/* Referee */}
+              <div style={{ marginBottom: 24 }}>
+                <label style={labelStyle}>Árbitro</label>
+                <div style={{ position: 'relative' }}>
+                  <User size={13} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input type="text" value={editReferee} onChange={e => setEditReferee(e.target.value)} placeholder="Nombre del árbitro" style={{ ...inputStyle, paddingLeft: 34 }} />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setEditMatch(null)} style={{ flex: 1, padding: '12px', borderRadius: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', fontFamily: fontStack }}>
+                  Cancelar
+                </button>
+                <button onClick={handleSaveMatchInfo} disabled={saving} style={{ flex: 2, padding: '12px', borderRadius: 12, background: 'linear-gradient(135deg, #16a34a, #22c55e)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', color: '#fff', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', fontFamily: fontStack, opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {saving && <div style={{ width: 15, height: 15, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: '_spin 0.8s linear infinite' }} />}
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </DashboardLayout>
   );
 }
