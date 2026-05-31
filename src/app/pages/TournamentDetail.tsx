@@ -1,8 +1,10 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import LlavesTab from '../components/LlavesTab';
+import PartidosTab from '../components/PartidosTab';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import {
-  Calendar, Users, Trophy, BarChart3, GitBranch,
-  ArrowLeft, MapPin, Tag, Clock,
+  Calendar, Users, Trophy,
+  ArrowLeft, MapPin, Tag,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -29,15 +31,31 @@ interface TorneoTeam {
   TEAM: { id: string; name: string; logo: string | null } | null;
 }
 
-interface TorneoMatch {
-  id: string;
-  home_score: number | null;
-  away_score: number | null;
-  date: string | null;
-  status: string;
-  home_team: { name: string } | null;
-  away_team: { name: string } | null;
+interface TorneoStanding {
+  team_id: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  goal_difference: number;
+  points: number;
+  TEAM: { name: string } | null;
 }
+
+interface TopScorer {
+  id: string;
+  name: string;
+  lastname: string | null;
+  goals: number;
+  assists: number;
+  position: string | null;
+  team_id: string;
+  TEAM: { name: string } | null;
+}
+
+type TabId = 'participantes' | 'tabla' | 'llaves' | 'partidos' | 'goleadores';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,17 +81,25 @@ const CARD_GRADIENTS = [
   ['#7c2d12', '#c2410c'],
 ];
 
+const POSITION_LABEL: Record<string, string> = {
+  GK: 'POR', DEF: 'DEF', MID: 'MED', FWD: 'DEL',
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TournamentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [torneo, setTorneo]   = useState<Torneo | null>(null);
-  const [teams, setTeams]     = useState<TorneoTeam[]>([]);
-  const [matches, setMatches] = useState<TorneoMatch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [torneo, setTorneo]       = useState<Torneo | null>(null);
+  const [teams, setTeams]             = useState<TorneoTeam[]>([]);
+  const [standings, setStandings]     = useState<TorneoStanding[]>([]);
+  const [scorers, setScorers]         = useState<TopScorer[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [notFound, setNotFound]       = useState(false);
+  const [activeTab, setActiveTab]     = useState<TabId>('participantes');
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+  const [removing, setRemoving]       = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -81,14 +107,14 @@ export default function TournamentDetail() {
     const fetchAll = async () => {
       setLoading(true);
 
-      const [torneoRes, teamsRes, matchesRes] = await Promise.all([
+      const [torneoRes, teamsRes, standingsRes] = await Promise.all([
         supabase.from('TORNEO').select('*').eq('id', id).single(),
         supabase.from('TORNEO_TEAMS').select('*, TEAM(id, name, logo)').eq('torneo_id', id),
-        supabase.from('MATCH')
-          .select('id, home_score, away_score, date, status, home_team:TEAM!MATCH_home_team_id_fkey(name), away_team:TEAM!MATCH_away_team_id_fkey(name)')
+        supabase.from('TORNEO_STANDING')
+          .select('team_id, played, won, drawn, lost, goals_for, goals_against, goal_difference, points, TEAM(name)')
           .eq('torneo_id', id)
-          .order('date', { ascending: false })
-          .limit(5),
+          .is('stage_id', null)
+          .order('points', { ascending: false }),
       ]);
 
       if (torneoRes.error || !torneoRes.data) {
@@ -96,7 +122,7 @@ export default function TournamentDetail() {
       } else {
         setTorneo(torneoRes.data as Torneo);
         setTeams((teamsRes.data ?? []) as TorneoTeam[]);
-        setMatches((matchesRes.data ?? []) as unknown as TorneoMatch[]);
+        setStandings((standingsRes.data ?? []) as unknown as TorneoStanding[]);
       }
 
       setLoading(false);
@@ -104,6 +130,28 @@ export default function TournamentDetail() {
 
     fetchAll();
   }, [id]);
+
+  useEffect(() => {
+    const confirmed = teams.filter(t => t.status === 'confirmed');
+    if (confirmed.length === 0) return;
+    const ids = confirmed.map(t => t.team_id);
+    supabase
+      .from('GUEST_PLAYER')
+      .select('id, name, lastname, goals, assists, position, team_id, TEAM(name)')
+      .in('team_id', ids)
+      .eq('is_active', true)
+      .order('goals', { ascending: false })
+      .limit(10)
+      .then(({ data }) => setScorers((data ?? []) as unknown as TopScorer[]));
+  }, [teams]);
+
+  const handleRemoveTeam = async (torneoTeamId: string) => {
+    setRemoving(true);
+    const { error } = await supabase.from('TORNEO_TEAMS').delete().eq('id', torneoTeamId);
+    if (!error) setTeams(prev => prev.filter(t => t.id !== torneoTeamId));
+    setPendingRemove(null);
+    setRemoving(false);
+  };
 
   // ── Loading ──
   if (loading) {
@@ -132,16 +180,32 @@ export default function TournamentDetail() {
     );
   }
 
-  const cfg    = STATUS_CONFIG[torneo.status] ?? STATUS_CONFIG.upcoming;
-  const [from, to] = CARD_GRADIENTS[0];
+  const cfg          = STATUS_CONFIG[torneo.status] ?? STATUS_CONFIG.upcoming;
+  const [from, to]   = CARD_GRADIENTS[0];
   const confirmedTeams = teams.filter(t => t.status === 'confirmed');
-  const finishedMatches = matches.filter(m => m.status === 'finished');
+
+  const TABS: { id: TabId; label: string }[] = torneo.type === 'league'
+    ? [
+        { id: 'participantes', label: 'Participantes' },
+        { id: 'tabla',         label: 'Tabla' },
+        { id: 'partidos',      label: 'Partidos' },
+        { id: 'goleadores',    label: 'Goleadores' },
+      ]
+    : [
+        { id: 'participantes', label: 'Participantes' },
+        { id: 'llaves',        label: 'Llaves' },
+        { id: 'partidos',      label: 'Partidos' },
+        { id: 'goleadores',    label: 'Goleadores' },
+      ];
 
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6 flex flex-col gap-4 md:gap-5" style={{ fontFamily: "'Barlow Condensed', 'Impact', system-ui, sans-serif" }}>
 
-        <style>{`@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
+        <style>{`
+          @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+          .standing-row:hover { background: rgba(255,255,255,0.04) !important; }
+        `}</style>
 
         {/* ─── BACK BUTTON ──────────────────────────────────── */}
         <div>
@@ -168,7 +232,6 @@ export default function TournamentDetail() {
           </div>
 
           <div className="p-5 sm:p-8" style={{ position: 'relative', zIndex: 1 }}>
-            {/* Status + type badges */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: cfg.bg, border: '1px solid rgba(255,255,255,0.12)' }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.dot, animation: torneo.status === 'active' ? 'pulse-dot 2s ease infinite' : 'none' }} />
@@ -180,12 +243,10 @@ export default function TournamentDetail() {
               </div>
             </div>
 
-            {/* Name */}
             <h1 style={{ fontSize: 'clamp(28px,4vw,48px)', fontWeight: 900, color: '#fff', letterSpacing: -1, lineHeight: 1.1, marginBottom: 20 }}>
               {torneo.name}
             </h1>
 
-            {/* Meta grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
               {[
                 { icon: Calendar, label: 'Inicio',    value: safeDate(torneo.start_date, { day: 'numeric', month: 'long', year: 'numeric' }) },
@@ -208,112 +269,209 @@ export default function TournamentDetail() {
           </div>
         </div>
 
-        {/* ─── STAT CARDS ───────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-          {[
-            { icon: Users,    label: 'Equipos confirmados', value: confirmedTeams.length, color: '#0891b2', grad: 'linear-gradient(135deg, #0891b2, #0e7490)' },
-            { icon: Calendar, label: 'Partidos jugados',    value: finishedMatches.length, color: '#8b5cf6', grad: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
-            { icon: Clock,    label: 'Partidos pendientes', value: matches.filter(m => m.status === 'scheduled').length, color: '#d97706', grad: 'linear-gradient(135deg, #d97706, #b45309)' },
-          ].map((s, i) => {
-            const SIcon = s.icon;
-            return (
-              <div key={i} style={{ padding: '20px', borderRadius: 18, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${s.color}, transparent)` }} />
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: s.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                  <SIcon size={17} color="#fff" />
-                </div>
-                <p style={{ fontSize: 32, fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>{s.value}</p>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif", marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>{s.label}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ─── QUICK LINKS ──────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { to: `/standings/${id}`, icon: BarChart3, label: 'Tabla de posiciones', sub: 'Ver clasificación', color: '#22c55e', bg: 'rgba(22,163,74,0.1)', border: 'rgba(22,163,74,0.2)' },
-            { to: `/brackets/${id}`,  icon: GitBranch, label: 'Llaves',              sub: 'Ver eliminatorias', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.2)' },
-            { to: `/matches`,         icon: Calendar,  label: 'Partidos',             sub: 'Ver calendario',   color: '#0891b2', bg: 'rgba(8,145,178,0.1)',  border: 'rgba(8,145,178,0.2)'  },
-            { to: `/teams`,           icon: Users,     label: 'Equipos',              sub: 'Gestionar equipos', color: '#d97706', bg: 'rgba(217,119,6,0.1)', border: 'rgba(217,119,6,0.2)'  },
-          ].map(l => {
-            const LIcon = l.icon;
-            return (
-              <Link key={l.to} to={l.to} style={{ display: 'block', padding: '18px', borderRadius: 16, background: '#0d1117', border: `1px solid rgba(255,255,255,0.06)`, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = l.border; e.currentTarget.style.background = l.bg; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.background = '#0d1117'; }}
-              >
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: l.bg, border: `1px solid ${l.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                  <LIcon size={17} color={l.color} />
-                </div>
-                <h3 style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', marginBottom: 4 }}>{l.label}</h3>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontFamily: "'Barlow', sans-serif" }}>{l.sub}</p>
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* ─── TEAMS + MATCHES ──────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-
-          {/* Equipos */}
-          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Inscritos</div>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5, marginBottom: 18 }}>
-              Equipos
-              <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(22,163,74,0.1)', color: '#22c55e', verticalAlign: 'middle' }}>{confirmedTeams.length}</span>
-            </h2>
-
-            {confirmedTeams.length === 0 ? (
-              <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif" }}>No hay equipos confirmados aún</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {confirmedTeams.map((t, i) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.2)', width: 20 }}>{i + 1}</span>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][0]}, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
-                      {t.TEAM?.name?.[0] ?? '?'}
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>{t.TEAM?.name ?? 'Equipo'}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* ─── TABS ─────────────────────────────────────────── */}
+        <div>
+          {/* Tab bar */}
+          <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', gap: 0, overflowX: 'auto' }}>
+            {TABS.map(tab => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '12px 20px', whiteSpace: 'nowrap',
+                    fontSize: 14, fontWeight: 800, letterSpacing: 0.5,
+                    fontFamily: 'inherit',
+                    color: active ? '#f1f5f9' : 'rgba(255,255,255,0.35)',
+                    borderBottom: active ? '2px solid #22c55e' : '2px solid transparent',
+                    marginBottom: -1,
+                    transition: 'color 0.2s',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Últimos partidos */}
-          <div style={{ borderRadius: 20, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', padding: '22px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Resultados</div>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.5, marginBottom: 18 }}>Últimos partidos</h2>
+          {/* Tab content */}
+          <div style={{ paddingTop: 20 }}>
 
-            {finishedMatches.length === 0 ? (
-              <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif" }}>No hay resultados aún</p>
-            ) : (
+            {/* ── Participantes ── */}
+            {activeTab === 'participantes' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {finishedMatches.slice(0, 4).map(m => (
-                  <div key={m.id} style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif", marginBottom: 8 }}>
-                      {safeDate(m.date, { day: 'numeric', month: 'short' })}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {(m.home_team as any)?.name ?? '—'}
-                      </span>
-                      <div style={{ padding: '4px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', fontSize: 15, fontWeight: 900, color: '#f1f5f9', whiteSpace: 'nowrap' }}>
-                        {m.home_score ?? '?'} — {m.away_score ?? '?'}
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                    {teams.length} inscrito{teams.length !== 1 ? 's' : ''} · {confirmedTeams.length} confirmado{confirmedTeams.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {teams.length === 0 ? (
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif" }}>No hay equipos inscritos aún</p>
+                ) : teams.map((t, i) => {
+                  const isConfirmed = t.status === 'confirmed';
+                  const isPending   = pendingRemove === t.id;
+
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: isPending ? 'rgba(239,68,68,0.06)' : '#0d1117', border: `1px solid ${isPending ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.06)'}`, transition: 'border-color 0.2s, background 0.2s' }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.2)', width: 24, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][0]}, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                        {t.TEAM?.name?.[0] ?? '?'}
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', flex: 1, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {(m.away_team as any)?.name ?? '—'}
-                      </span>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.TEAM?.name ?? 'Equipo'}</p>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: isConfirmed ? 'rgba(22,163,74,0.12)' : 'rgba(217,119,6,0.12)', color: isConfirmed ? '#22c55e' : '#d97706', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          {isConfirmed ? 'Confirmado' : 'Pendiente'}
+                        </span>
+                      </div>
+
+                      {/* Actions */}
+                      {isPending ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>¿Eliminar?</span>
+                          <button
+                            onClick={() => handleRemoveTeam(t.id)}
+                            disabled={removing}
+                            style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: removing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: removing ? 0.5 : 1 }}
+                          >
+                            Sí
+                          </button>
+                          <button
+                            onClick={() => setPendingRemove(null)}
+                            disabled={removing}
+                            style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setPendingRemove(t.id)}
+                          title="Eliminar del torneo"
+                          style={{ width: 32, height: 32, borderRadius: 8, background: 'none', border: '1px solid rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'border-color 0.2s, background 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'; e.currentTarget.style.background = 'none'; }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+                          </svg>
+                        </button>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
-            <Link to="/matches" style={{ display: 'block', textAlign: 'center', fontSize: 13, color: '#22c55e', textDecoration: 'none', fontWeight: 700, marginTop: 16, letterSpacing: 0.5 }}>
-              Ver todos los partidos →
-            </Link>
+            {/* ── Tabla (liga) ── */}
+            {activeTab === 'tabla' && (
+              <div style={{ borderRadius: 16, background: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                {standings.length === 0 ? (
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif", padding: '20px 16px' }}>
+                    La tabla de posiciones estará disponible cuando comiencen los partidos
+                  </p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                          {['Pos', 'Equipo', 'PJ', 'PG', 'PE', 'PP', 'GF', 'GC', 'DG', 'Pts'].map((h, i) => (
+                            <th key={h} style={{ padding: i < 2 ? '10px 14px' : '10px 12px', textAlign: i < 2 ? 'left' : 'center', fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {standings.map((s, i) => {
+                          const pos = i + 1;
+                          const posColor = pos === 1 ? '#22c55e' : pos <= 2 ? '#0891b2' : pos >= standings.length ? '#ef4444' : 'rgba(255,255,255,0.25)';
+                          return (
+                            <tr key={s.team_id} className="standing-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.15s' }}>
+                              <td style={{ padding: '11px 14px', textAlign: 'left' }}>
+                                <span style={{ fontSize: 13, fontWeight: 900, color: posColor }}>{pos}</span>
+                              </td>
+                              <td style={{ padding: '11px 14px', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ width: 26, height: 26, borderRadius: 7, background: `linear-gradient(135deg, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][0]}, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                                    {s.TEAM?.name?.[0] ?? '?'}
+                                  </div>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9' }}>{s.TEAM?.name ?? '—'}</span>
+                                </div>
+                              </td>
+                              {[s.played, s.won, s.drawn, s.lost, s.goals_for, s.goals_against].map((v, ci) => (
+                                <td key={ci} style={{ padding: '11px 12px', textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.55)' }}>{v}</td>
+                              ))}
+                              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: s.goal_difference > 0 ? '#22c55e' : s.goal_difference < 0 ? '#ef4444' : 'rgba(255,255,255,0.4)' }}>
+                                {s.goal_difference > 0 ? `+${s.goal_difference}` : s.goal_difference}
+                              </td>
+                              <td style={{ padding: '11px 12px', textAlign: 'center' }}>
+                                <span style={{ fontSize: 14, fontWeight: 900, color: '#f1f5f9', background: 'rgba(34,197,94,0.12)', borderRadius: 7, padding: '3px 10px', display: 'inline-block' }}>{s.points}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Llaves (copa) ── */}
+            {activeTab === 'llaves' && (
+              <LlavesTab
+                tournamentId={id!}
+                teams={confirmedTeams.map(t => ({ id: t.team_id, name: t.TEAM?.name ?? '' }))}
+              />
+            )}
+
+            {/* ── Partidos ── */}
+            {activeTab === 'partidos' && (
+              <PartidosTab
+                tournamentId={id!}
+                teamCount={confirmedTeams.length}
+              />
+            )}
+
+            {/* ── Goleadores ── */}
+            {activeTab === 'goleadores' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {scorers.length === 0 ? (
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif" }}>No hay estadísticas de jugadores aún</p>
+                ) : scorers.map((p, i) => {
+                  const fullName = [p.name, p.lastname].filter(Boolean).join(' ');
+                  const isTop = i === 0;
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: isTop ? 'rgba(251,191,36,0.06)' : '#0d1117', border: `1px solid ${isTop ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: isTop ? '#fbbf24' : 'rgba(255,255,255,0.2)', width: 24, textAlign: 'center' }}>{i + 1}</span>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: isTop ? 'linear-gradient(135deg, #b45309, #d97706)' : `linear-gradient(135deg, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][0]}, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                        {fullName[0]?.toUpperCase() ?? '?'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 14, fontWeight: 800, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullName}</p>
+                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif", marginTop: 1 }}>
+                          {p.TEAM?.name ?? '—'}{p.position ? ` · ${POSITION_LABEL[p.position] ?? p.position}` : ''}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <p style={{ fontSize: 18, fontWeight: 900, color: isTop ? '#fbbf24' : '#f1f5f9', lineHeight: 1 }}>{p.goals}</p>
+                          <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif", textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 }}>Goles</p>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <p style={{ fontSize: 18, fontWeight: 900, color: 'rgba(255,255,255,0.5)', lineHeight: 1 }}>{p.assists}</p>
+                          <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'Barlow', sans-serif", textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 }}>Asist</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
           </div>
         </div>
 

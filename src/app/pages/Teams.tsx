@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DashboardLayout from '../components/layout/DashboardLayout';
-import { Plus, Users, Search, Trophy, X, Shield, UserPlus, Trash2, ChevronUp } from 'lucide-react';
+import { Plus, Users, Search, Trophy, X, Shield, UserPlus, Trash2, ChevronUp, Camera } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ interface Team {
   name: string | null;
   code: string | null;
   logo: string | null;
+  shield_url: string | null;
   gender: string | null;
   founded: string | null;
   ubication_id: string | null;
@@ -78,6 +79,19 @@ export default function Teams() {
   const [adding, setAdding]                     = useState(false);
   const [enrolledTorneos, setEnrolledTorneos]   = useState<string[]>([]);
   const [removingTorneoId, setRemovingTorneoId] = useState<string | null>(null);
+
+  // ── Bulk enroll modal ──
+  const [showBulk, setShowBulk]             = useState(false);
+  const [bulkTorneoId, setBulkTorneoId]     = useState('');
+  const [bulkSelected, setBulkSelected]     = useState<Set<string>>(new Set());
+  const [bulkEnrolled, setBulkEnrolled]     = useState<Set<string>>(new Set());
+  const [bulkEnrolling, setBulkEnrolling]   = useState(false);
+  const [loadingBulkStatus, setLoadingBulkStatus] = useState(false);
+
+  // ── Logo upload ──
+  const fileInputRef                        = useRef<HTMLInputElement>(null);
+  const [uploadTarget, setUploadTarget]     = useState<Team | null>(null);
+  const [uploading, setUploading]           = useState(false);
 
   // ── Guest players modal ──
   const [playerTarget, setPlayerTarget]     = useState<Team | null>(null);
@@ -203,6 +217,88 @@ export default function Teams() {
     setPlayerForm({ name: '', lastname: '', dominant_leg: '', gender: '', birth_year: '' });
   };
 
+  useEffect(() => {
+    if (!bulkTorneoId || !showBulk) return;
+    setLoadingBulkStatus(true);
+    supabase.from('TORNEO_TEAMS').select('team_id').eq('torneo_id', bulkTorneoId)
+      .then(({ data }) => {
+        const enrolled = new Set((data ?? []).map((r: any) => r.team_id as string));
+        setBulkEnrolled(enrolled);
+        setBulkSelected(new Set(myTeams.filter(t => !enrolled.has(t.id)).map(t => t.id)));
+        setLoadingBulkStatus(false);
+      });
+  }, [bulkTorneoId, showBulk, myTeams]);
+
+  const openBulkModal = () => {
+    setBulkTorneoId('');
+    setBulkSelected(new Set());
+    setBulkEnrolled(new Set());
+    setShowBulk(true);
+  };
+
+  const handleBulkEnroll = async () => {
+    if (!bulkTorneoId || bulkSelected.size === 0 || bulkEnrolling) return;
+    setBulkEnrolling(true);
+    try {
+      const rows = [...bulkSelected].map(teamId => ({
+        team_id: teamId,
+        torneo_id: bulkTorneoId,
+        status: 'confirmed',
+      }));
+      const { error } = await supabase.from('TORNEO_TEAMS').insert(rows);
+      if (error) throw error;
+      toast.success(`${rows.length} equipo${rows.length !== 1 ? 's' : ''} inscritos`);
+      setBulkEnrolled(prev => new Set([...prev, ...bulkSelected]));
+      setBulkSelected(new Set());
+    } catch (err: any) {
+      toast.error(err.message ?? 'Error al inscribir equipos');
+    } finally {
+      setBulkEnrolling(false);
+    }
+  };
+
+  const handleLogoClick = (team: Team) => {
+    setUploadTarget(team);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadTarget) return;
+
+    setUploading(true);
+    try {
+      // Remove existing files for this team
+      const { data: existing } = await supabase.storage.from('crests').list(uploadTarget.id);
+      if (existing && existing.length > 0) {
+        await supabase.storage.from('crests').remove(existing.map(f => `${uploadTarget.id}/${f.name}`));
+      }
+
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${uploadTarget.id}/shield_${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('crests')
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('crests').getPublicUrl(path);
+
+      const { error: updateError } = await supabase
+        .from('TEAM').update({ shield_url: publicUrl }).eq('id', uploadTarget.id);
+      if (updateError) throw updateError;
+
+      setMyTeams(prev => prev.map(t => t.id === uploadTarget.id ? { ...t, shield_url: publicUrl } : t));
+      toast.success('Logo actualizado');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Error al subir el logo');
+    } finally {
+      setUploading(false);
+      setUploadTarget(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleCreateTeam = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!profileId || !ubicationId || !teamName.trim()) return;
@@ -309,9 +405,20 @@ export default function Teams() {
         <style>{`
           @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.5} }
           @keyframes fadeIn { from{opacity:0;transform:scale(.97)} to{opacity:1;transform:scale(1)} }
+          @keyframes spin   { to{transform:rotate(360deg)} }
           .t-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
           .t-card:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
+          .logo-wrap:hover .logo-overlay { opacity: 1 !important; }
         `}</style>
+
+        {/* Hidden file input for logo upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
 
         {/* ─── HEADER ─────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -320,12 +427,22 @@ export default function Teams() {
             <h1 style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, color: '#f1f5f9', letterSpacing: -1, lineHeight: 1 }}>Equipos</h1>
           </div>
           {tab === 'mine' && (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', fontFamily: "'Barlow Condensed', sans-serif" }}
-            >
-              <Plus size={16} /> Crear equipo
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {myTeams.length > 0 && myTorneos.length > 0 && (
+                <button
+                  onClick={openBulkModal}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', borderRadius: 12, border: '1px solid rgba(139,92,246,0.35)', cursor: 'pointer', background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  <Trophy size={15} /> Inscribir al torneo
+                </button>
+              )}
+              <button
+                onClick={() => setShowCreate(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', borderRadius: 12, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', boxShadow: '0 4px 16px rgba(22,163,74,0.3)', fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                <Plus size={16} /> Crear equipo
+              </button>
+            </div>
           )}
         </div>
 
@@ -426,8 +543,32 @@ export default function Teams() {
 
                   {/* Avatar + name */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ width: 52, height: 52, borderRadius: 14, background: `linear-gradient(135deg, ${fromC}, ${toC})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
-                      {initial}
+                    {/* Logo with upload overlay (mine tab only) */}
+                    <div
+                      className={tab === 'mine' ? 'logo-wrap' : ''}
+                      onClick={() => tab === 'mine' && !uploading && handleLogoClick(team)}
+                      style={{ position: 'relative', width: 52, height: 52, borderRadius: 14, flexShrink: 0, cursor: tab === 'mine' ? 'pointer' : 'default', overflow: 'hidden' }}
+                    >
+                      {team.shield_url ? (
+                        <img src={team.shield_url} alt={team.name ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 14 }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', borderRadius: 14, background: `linear-gradient(135deg, ${fromC}, ${toC})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: '#fff' }}>
+                          {uploading && uploadTarget?.id === team.id ? (
+                            <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                          ) : initial}
+                        </div>
+                      )}
+                      {/* Hover overlay */}
+                      {tab === 'mine' && (
+                        <div
+                          className="logo-overlay"
+                          style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: uploading && uploadTarget?.id === team.id ? 1 : 0, transition: 'opacity 0.18s' }}
+                        >
+                          {uploading && uploadTarget?.id === team.id
+                            ? <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                            : <Camera size={18} color="#fff" />}
+                        </div>
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0, paddingRight: team.is_artificial ? 60 : 0 }}>
                       <h3 style={{ fontSize: 18, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.3, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -826,6 +967,144 @@ export default function Teams() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── BULK ENROLL MODAL ──────────────────────────── */}
+        {showBulk && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setShowBulk(false); }}
+          >
+            <div style={{ width: '100%', maxWidth: 460, background: '#0d1117', borderRadius: 22, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.6)', animation: 'fadeIn 0.2s ease', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
+
+              {/* Header */}
+              <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(139,92,246,0.7)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>Inscripción masiva</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: -0.3 }}>Inscribir equipos al torneo</h2>
+                </div>
+                <button onClick={() => setShowBulk(false)}
+                  style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Torneo selector */}
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>Torneo destino</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {myTorneos.map(t => (
+                    <button key={t.id} type="button" onClick={() => setBulkTorneoId(t.id)}
+                      style={{ padding: '11px 14px', borderRadius: 12, cursor: 'pointer', background: bulkTorneoId === t.id ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.03)', border: bulkTorneoId === t.id ? '1.5px solid #7c3aed' : '1.5px solid rgba(255,255,255,0.08)', color: bulkTorneoId === t.id ? '#a78bfa' : '#f1f5f9', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.15s ease' }}>
+                      <Trophy size={14} color={bulkTorneoId === t.id ? '#a78bfa' : 'rgba(255,255,255,0.25)'} />
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Team checklist */}
+              {bulkTorneoId && (
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                  {loadingBulkStatus ? (
+                    <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[1,2,3].map(i => (
+                        <div key={i} style={{ height: 48, borderRadius: 12, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease infinite' }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '12px 24px' }}>
+                      {/* Select all / none controls */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                          {myTeams.length} equipo{myTeams.length !== 1 ? 's' : ''} · {bulkSelected.size} seleccionado{bulkSelected.size !== 1 ? 's' : ''}
+                        </span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => setBulkSelected(new Set(myTeams.filter(t => !bulkEnrolled.has(t.id)).map(t => t.id)))}
+                            style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5, textTransform: 'uppercase' }}
+                          >
+                            Todos
+                          </button>
+                          <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11 }}>·</span>
+                          <button
+                            onClick={() => setBulkSelected(new Set())}
+                            style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: 0.5, textTransform: 'uppercase' }}
+                          >
+                            Ninguno
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {myTeams.map((team, i) => {
+                          const [fromC, toC] = TEAM_COLORS[i % TEAM_COLORS.length];
+                          const enrolled  = bulkEnrolled.has(team.id);
+                          const selected  = bulkSelected.has(team.id);
+                          return (
+                            <div
+                              key={team.id}
+                              onClick={() => {
+                                if (enrolled) return;
+                                setBulkSelected(prev => {
+                                  const next = new Set(prev);
+                                  next.has(team.id) ? next.delete(team.id) : next.add(team.id);
+                                  return next;
+                                });
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: enrolled ? 'default' : 'pointer', background: selected ? 'rgba(139,92,246,0.08)' : enrolled ? 'rgba(34,197,94,0.04)' : 'rgba(255,255,255,0.02)', border: `1px solid ${selected ? 'rgba(139,92,246,0.3)' : enrolled ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.05)'}`, transition: 'all 0.15s', opacity: enrolled ? 0.7 : 1 }}
+                            >
+                              {/* Checkbox */}
+                              <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${selected ? '#7c3aed' : enrolled ? '#22c55e' : 'rgba(255,255,255,0.2)'}`, background: selected ? '#7c3aed' : enrolled ? 'rgba(34,197,94,0.15)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                                {(selected || enrolled) && (
+                                  <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
+                                    <path d="M1 4.5L4 7.5L10 1" stroke={enrolled ? '#22c55e' : '#fff'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                )}
+                              </div>
+
+                              {/* Avatar */}
+                              {team.shield_url ? (
+                                <img src={team.shield_url} alt="" style={{ width: 32, height: 32, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />
+                              ) : (
+                                <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, ${fromC}, ${toC})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                                  {(team.name ?? '?')[0].toUpperCase()}
+                                </div>
+                              )}
+
+                              <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.name}</span>
+
+                              {enrolled && (
+                                <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', letterSpacing: 0.5, background: 'rgba(34,197,94,0.12)', padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>
+                                  YA INSCRITO
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Footer actions */}
+              <div style={{ padding: '14px 24px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 10, flexShrink: 0 }}>
+                <button onClick={() => setShowBulk(false)}
+                  style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase' }}>
+                  Cerrar
+                </button>
+                <button
+                  onClick={handleBulkEnroll}
+                  disabled={bulkSelected.size === 0 || bulkEnrolling || !bulkTorneoId}
+                  style={{ flex: 2, padding: 12, borderRadius: 12, border: 'none', cursor: (bulkSelected.size === 0 || bulkEnrolling || !bulkTorneoId) ? 'not-allowed' : 'pointer', background: (bulkSelected.size === 0 || !bulkTorneoId) ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: (bulkSelected.size === 0 || !bulkTorneoId) ? 'rgba(255,255,255,0.25)' : '#fff', fontSize: 14, fontWeight: 800, fontFamily: "'Barlow Condensed', sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, opacity: bulkEnrolling ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: (bulkSelected.size === 0 || !bulkTorneoId) ? 'none' : '0 4px 14px rgba(124,58,237,0.3)', transition: 'all 0.2s' }}>
+                  {bulkEnrolling && <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />}
+                  {bulkEnrolling ? 'Inscribiendo...' : bulkSelected.size > 0 ? `Inscribir ${bulkSelected.size} equipo${bulkSelected.size !== 1 ? 's' : ''}` : 'Selecciona equipos'}
+                </button>
+              </div>
+
             </div>
           </div>
         )}
