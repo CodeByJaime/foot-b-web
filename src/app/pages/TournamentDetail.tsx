@@ -205,6 +205,8 @@ export default function TournamentDetail() {
         <style>{`
           @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
           .standing-row:hover { background: rgba(255,255,255,0.04) !important; }
+          .tabs-bar::-webkit-scrollbar { display: none; }
+          .tabs-bar { -ms-overflow-style: none; scrollbar-width: none; }
         `}</style>
 
         {/* ─── BACK BUTTON ──────────────────────────────────── */}
@@ -272,7 +274,7 @@ export default function TournamentDetail() {
         {/* ─── TABS ─────────────────────────────────────────── */}
         <div>
           {/* Tab bar */}
-          <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', gap: 0, overflowX: 'auto' }}>
+          <div className="tabs-bar" style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', gap: 0, overflowX: 'auto' }}>
             {TABS.map(tab => {
               const active = activeTab === tab.id;
               return (

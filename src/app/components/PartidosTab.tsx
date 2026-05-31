@@ -155,8 +155,13 @@ export default function PartidosTab({ tournamentId, teamCount }: Props) {
   let totalChipRounds: number;
 
   if (isKnockout) {
+    const round1Count = allStageMatches.filter(m => m.match_round === 1).length;
     let bracketSize = 1;
-    while (bracketSize < teamCount) bracketSize *= 2;
+    if (round1Count > 0) {
+      while (bracketSize < round1Count * 2) bracketSize *= 2;
+    } else {
+      while (bracketSize < teamCount) bracketSize *= 2;
+    }
     totalChipRounds = Math.max(1, Math.log2(bracketSize));
     chipsRounds = Array.from({ length: totalChipRounds }, (_, i) => i + 1);
   } else {

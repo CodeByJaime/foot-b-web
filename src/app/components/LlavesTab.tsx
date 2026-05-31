@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, type ElementType } from 'react';
 import {
   CalendarRange, Trophy, RefreshCw, ArrowLeftRight, Layers,
-  Users, AlertTriangle, X, Calendar, MapPin, User,
+  Users, AlertTriangle, X, Calendar, MapPin, User, LayoutGrid,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -38,7 +38,14 @@ interface Stage {
   matches: StageMatch[];
 }
 
-type FixtureFormat = 'liga-ida' | 'liga-ida-vuelta' | 'liga-copa' | 'copa';
+type FixtureFormat = 'liga-ida' | 'liga-ida-vuelta' | 'liga-copa' | 'copa' | 'grupos-copa';
+
+interface GruposConfig {
+  numGroups: number;
+  groupFormat: 'ida' | 'ida-vuelta';
+  advancePerGroup: number;
+  wildcards: number;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,10 +109,18 @@ function knockoutRoundLabel(totalRounds: number, roundIndex: number): string {
   return `Ronda ${roundIndex + 1}`;
 }
 
-function getPreviewStats(format: FixtureFormat, n: number) {
+function getPreviewStats(format: FixtureFormat, n: number, cfg?: GruposConfig) {
   if (format === 'liga-ida') { const rounds = n % 2 === 0 ? n - 1 : n; return { matches: Math.floor(n / 2) * rounds, rounds }; }
   if (format === 'liga-ida-vuelta') { const r = n % 2 === 0 ? n - 1 : n; return { matches: Math.floor(n / 2) * r * 2, rounds: r * 2 }; }
   if (format === 'copa') { let size = 1; while (size < n) size *= 2; return { matches: size - 1, rounds: Math.log2(size) }; }
+  if (format === 'grupos-copa' && cfg) {
+    const perGroup = Math.ceil(n / cfg.numGroups);
+    const r1 = perGroup % 2 === 0 ? perGroup - 1 : perGroup;
+    const groupMatches = Math.floor(perGroup / 2) * r1 * cfg.numGroups * (cfg.groupFormat === 'ida-vuelta' ? 2 : 1);
+    const advancing = cfg.numGroups * cfg.advancePerGroup + cfg.wildcards;
+    let kSize = 1; while (kSize < advancing) kSize *= 2;
+    return { matches: groupMatches + kSize - 1, rounds: r1 * (cfg.groupFormat === 'ida-vuelta' ? 2 : 1) + Math.log2(kSize) };
+  }
   const r1 = n % 2 === 0 ? n - 1 : n; const m1 = Math.floor(n / 2) * r1;
   let topN = Math.min(n, 4); let kSize = 1; while (kSize < topN) kSize *= 2;
   return { matches: m1 + kSize - 1, rounds: r1 + Math.log2(kSize) };
@@ -115,10 +130,11 @@ const FORMATS: {
   id: FixtureFormat; Icon: ElementType;
   title: string; sub: string; desc: string; color: string; rgb: string;
 }[] = [
-  { id: 'liga-ida',        Icon: RefreshCw,     title: 'Liga — Solo ida',     sub: 'Todos contra todos',     desc: 'Cada equipo juega una vez contra todos los demás.',         color: '#3b82f6', rgb: '59,130,246'  },
-  { id: 'liga-ida-vuelta', Icon: ArrowLeftRight, title: 'Liga — Ida y vuelta', sub: 'Todos contra todos × 2', desc: 'Cada equipo se enfrenta dos veces: local y visitante.',       color: '#8b5cf6', rgb: '139,92,246' },
-  { id: 'liga-copa',       Icon: Layers,         title: 'Liga + Eliminación',  sub: 'Grupos y llaves',        desc: 'Fase de grupos seguida de ronda eliminatoria.',              color: '#f59e0b', rgb: '245,158,11' },
-  { id: 'copa',            Icon: Trophy,         title: 'Eliminación directa', sub: 'Copa / Llaves',          desc: 'El que pierde queda eliminado. Llaves hasta la gran final.', color: '#22c55e', rgb: '34,197,94'  },
+  { id: 'grupos-copa',     Icon: LayoutGrid,     title: 'Grupos + Copa',       sub: 'Fase de grupos → llaves', desc: 'Divide los equipos en grupos. Los mejores de cada grupo pasan a eliminación directa.', color: '#f59e0b', rgb: '245,158,11' },
+  { id: 'copa',            Icon: Trophy,         title: 'Eliminación directa', sub: 'Copa / Llaves',           desc: 'El que pierde queda eliminado. Llaves hasta la gran final.',                         color: '#22c55e', rgb: '34,197,94'  },
+  { id: 'liga-ida',        Icon: RefreshCw,      title: 'Liga — Solo ida',     sub: 'Todos contra todos',      desc: 'Cada equipo juega una vez contra todos los demás.',                                  color: '#3b82f6', rgb: '59,130,246'  },
+  { id: 'liga-ida-vuelta', Icon: ArrowLeftRight, title: 'Liga — Ida y vuelta', sub: 'Todos contra todos × 2', desc: 'Cada equipo se enfrenta dos veces: local y visitante.',                              color: '#8b5cf6', rgb: '139,92,246' },
+  { id: 'liga-copa',       Icon: Layers,         title: 'Liga + Eliminación',  sub: 'Liga simple + llaves',   desc: 'Todos contra todos (sin grupos), luego eliminatoria con los mejor clasificados.',     color: '#ec4899', rgb: '236,72,153' },
 ];
 
 // ─── MatchCard ────────────────────────────────────────────────────────────────
@@ -197,7 +213,13 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
   const [groups,    setGroups]    = useState<Group[]>([]);
   const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
   const [loading,   setLoading]   = useState(true);
-  const [format,    setFormat]    = useState<FixtureFormat>('copa');
+  const [format,    setFormat]    = useState<FixtureFormat>('grupos-copa');
+  const [gruposConfig, setGruposConfig] = useState<GruposConfig>({
+    numGroups: Math.max(2, Math.ceil(teams.length / 4)),
+    groupFormat: 'ida',
+    advancePerGroup: 1,
+    wildcards: 0,
+  });
   const [generating,setGenerating]= useState(false);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -209,6 +231,7 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
   const [editReferee, setEditReferee] = useState('');
   const [saving,      setSaving]      = useState(false);
   const [koRound,     setKoRound]     = useState<Record<string, number>>({});
+  const [groupRound,  setGroupRound]  = useState<Record<string, number>>({});
 
   const fontStack = "'Barlow Condensed', system-ui, sans-serif";
 
@@ -244,8 +267,13 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
       }));
       setStages(stagesWithMatches);
       const init: Record<string, number> = {};
-      stagesWithMatches.forEach((s: Stage) => { if (s.type === 'knockout') init[s.id] = 1; });
+      const initGroup: Record<string, number> = {};
+      stagesWithMatches.forEach((s: Stage) => {
+        if (s.type === 'knockout') init[s.id] = 1;
+        if (s.type === 'group')    initGroup[s.id] = 1;
+      });
       setKoRound(init);
+      setGroupRound(initGroup);
     } else {
       setStages([]); setGroups([]); setGroupRows([]);
     }
@@ -259,7 +287,62 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
     setGenerating(true);
     setError(null);
     try {
-      if (format === 'liga-ida' || format === 'liga-ida-vuelta') {
+      if (format === 'grupos-copa') {
+        const GROUP_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const { numGroups, groupFormat, advancePerGroup, wildcards } = gruposConfig;
+
+        const { data: gStage, error: gse } = await supabase.from('TORNEO_STAGE').insert({
+          torneo_id: tournamentId, name: 'Fase de Grupos', type: 'group', stage_order: 1, status: 'active',
+        }).select().single();
+        if (gse || !gStage) throw new Error('Error al crear la fase de grupos');
+
+        const teamsPerGroup = Math.floor(teams.length / numGroups);
+        const extra         = teams.length % numGroups;
+        let teamIndex       = 0;
+
+        for (let g = 0; g < numGroups; g++) {
+          const size       = teamsPerGroup + (g < extra ? 1 : 0);
+          const groupTeams = teams.slice(teamIndex, teamIndex + size);
+          teamIndex       += size;
+
+          const { data: group, error: gge } = await supabase.from('TORNEO_GROUP').insert({
+            stage_id: gStage.id, name: `Grupo ${GROUP_LETTERS[g]}`,
+          }).select().single();
+          if (gge || !group) throw new Error(`Error al crear el ${GROUP_LETTERS[g]}`);
+
+          await supabase.from('TORNEO_GROUP_TEAMS').insert(
+            groupTeams.map(t => ({ group_id: group.id, team_id: t.id, played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 }))
+          );
+
+          const rounds1 = generateRoundRobin(groupTeams);
+          const rounds  = groupFormat === 'ida-vuelta'
+            ? [...rounds1, ...rounds1.map(r => r.map(({ home, away }) => ({ home: away, away: home })))]
+            : rounds1;
+
+          const matchRows: any[] = [];
+          rounds.forEach((round, ri) => round.forEach(({ home, away }) => {
+            matchRows.push({ torneo_id: tournamentId, stage_id: gStage.id, group_id: group.id, home_team_id: home.id, away_team_id: away.id, match_round: ri + 1, status: 'scheduled' });
+          }));
+          if (matchRows.length > 0) await supabase.from('MATCH').insert(matchRows);
+        }
+
+        const advancing = numGroups * advancePerGroup + wildcards;
+        let kSize = 1; while (kSize < advancing) kSize *= 2;
+
+        const { data: kStage, error: kse } = await supabase.from('TORNEO_STAGE').insert({
+          torneo_id: tournamentId, name: 'Fase Eliminatoria', type: 'knockout', stage_order: 2, status: 'pending',
+        }).select().single();
+        if (kse || !kStage) throw new Error('Error al crear la fase eliminatoria');
+
+        const koRows: any[] = [];
+        let matchesInRound = kSize / 2; let roundNum = 1;
+        while (matchesInRound >= 1) {
+          for (let i = 0; i < matchesInRound; i++) koRows.push({ torneo_id: tournamentId, stage_id: kStage.id, home_team_id: null, away_team_id: null, match_round: roundNum, status: 'pending' });
+          matchesInRound = Math.floor(matchesInRound / 2); roundNum++;
+        }
+        await supabase.from('MATCH').insert(koRows);
+
+      } else if (format === 'liga-ida' || format === 'liga-ida-vuelta') {
         const rounds1 = generateRoundRobin(teams);
         const rounds = format === 'liga-ida-vuelta'
           ? [...rounds1, ...rounds1.map(r => r.map(({ home, away }) => ({ home: away, away: home })))]
@@ -349,7 +432,7 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
   };
 
   const hasFixture = stages.length > 0;
-  const stats = getPreviewStats(format, teams.length);
+  const stats = getPreviewStats(format, teams.length, gruposConfig);
 
   if (loading) {
     return (
@@ -417,6 +500,79 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
               })}
             </div>
 
+            {/* ── Grupos config panel ── */}
+            {format === 'grupos-copa' && (() => {
+              const perGroup  = Math.ceil(teams.length / gruposConfig.numGroups);
+              const advancing = gruposConfig.numGroups * gruposConfig.advancePerGroup + gruposConfig.wildcards;
+              let kSize = 1; while (kSize < advancing) kSize *= 2;
+              const kLabel    = kSize === 2 ? 'Final' : kSize === 4 ? 'Semifinales' : kSize === 8 ? 'Cuartos de final' : kSize === 16 ? 'Octavos de final' : `Ronda de ${kSize}`;
+              const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' };
+              const lblSt: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, textTransform: 'uppercase', margin: 0 };
+              const opt = (active: boolean): React.CSSProperties => ({ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: fontStack, border: `1px solid ${active ? '#f59e0b' : 'rgba(255,255,255,0.1)'}`, background: active ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.04)', color: active ? '#f59e0b' : 'rgba(255,255,255,0.4)', transition: 'all 0.15s' });
+              return (
+                <div style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 14, padding: '18px 20px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', letterSpacing: 1.5, textTransform: 'uppercase', margin: 0 }}>Configuración de grupos</p>
+
+                  {/* Number of groups */}
+                  <div style={rowSt}>
+                    <div>
+                      <p style={{ ...lblSt, marginBottom: 4 }}>Número de grupos</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
+                        {teams.length} equipos → {gruposConfig.numGroups} grupos de ~{perGroup}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                      <button onClick={() => setGruposConfig(p => ({ ...p, numGroups: Math.max(2, p.numGroups - 1) }))} disabled={gruposConfig.numGroups <= 2}
+                        style={{ width: 32, height: 32, borderRadius: 8, cursor: gruposConfig.numGroups <= 2 ? 'not-allowed' : 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: gruposConfig.numGroups <= 2 ? 'rgba(255,255,255,0.2)' : '#fff', fontSize: 18, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      <span style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b', minWidth: 28, textAlign: 'center', fontFamily: fontStack }}>{gruposConfig.numGroups}</span>
+                      <button onClick={() => setGruposConfig(p => ({ ...p, numGroups: Math.min(Math.floor(teams.length / 2), p.numGroups + 1) }))} disabled={gruposConfig.numGroups >= Math.floor(teams.length / 2)}
+                        style={{ width: 32, height: 32, borderRadius: 8, cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 18, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                  </div>
+
+                  {/* Group format */}
+                  <div style={rowSt}>
+                    <p style={lblSt}>Formato de grupo</p>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => setGruposConfig(p => ({ ...p, groupFormat: 'ida' }))} style={opt(gruposConfig.groupFormat === 'ida')}>Solo ida</button>
+                      <button onClick={() => setGruposConfig(p => ({ ...p, groupFormat: 'ida-vuelta' }))} style={opt(gruposConfig.groupFormat === 'ida-vuelta')}>Ida y vuelta</button>
+                    </div>
+                  </div>
+
+                  {/* Advance per group */}
+                  <div style={rowSt}>
+                    <p style={lblSt}>Equipos que avanzan por grupo</p>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {[1, 2, 3].map(n => (
+                        <button key={n} onClick={() => setGruposConfig(p => ({ ...p, advancePerGroup: n }))} style={opt(gruposConfig.advancePerGroup === n)}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Wildcards */}
+                  <div style={rowSt}>
+                    <div>
+                      <p style={{ ...lblSt, marginBottom: 4 }}>Comodines (mejores segundos)</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Equipos extra que completan el bracket</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {[0, 1, 2, 3].map(n => (
+                        <button key={n} onClick={() => setGruposConfig(p => ({ ...p, wildcards: n }))} style={opt(gruposConfig.wildcards === n)}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div style={{ borderTop: '1px solid rgba(245,158,11,0.15)', paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', fontFamily: fontStack }}>
+                      {gruposConfig.numGroups}g × {gruposConfig.advancePerGroup} + {gruposConfig.wildcards} comodin{gruposConfig.wildcards !== 1 ? 'es' : ''} = <strong style={{ color: '#f59e0b' }}>{advancing}</strong> al bracket
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: '#f59e0b', fontFamily: fontStack }}>→ {kLabel}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Preview stats */}
             <div style={{ display: 'flex', gap: 20, padding: '12px 18px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 20, flexWrap: 'wrap' }}>
               {[{ label: 'Partidos', value: stats.matches }, { label: 'Jornadas / Rondas', value: stats.rounds }, { label: 'Equipos', value: teams.length }].map(({ label, value }) => (
@@ -469,56 +625,94 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
                   </span>
                 </div>
 
-                {/* Group stage with groups */}
-                {!isKnockout && hasGroups && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-                    {stageGroups.map(group => {
-                      const gStandings = groupRows.filter(r => r.group_id === group.id).sort((a, b) => {
-                        if (b.points !== a.points) return b.points - a.points;
-                        return (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against);
-                      });
-                      const grpMatches = visibleMatches.filter(m => m.group_id === group.id);
-                      const byRound = grpMatches.reduce<Record<number, StageMatch[]>>((acc, m) => {
-                        (acc[m.match_round] = acc[m.match_round] || []).push(m);
-                        return acc;
-                      }, {});
-                      const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+                {/* Group stage with groups — two-column layout */}
+                {!isKnockout && hasGroups && (() => {
+                  // All unique rounds across every group in this stage
+                  const allRounds = [...new Set(
+                    visibleMatches.filter(m => m.group_id != null).map(m => m.match_round)
+                  )].sort((a, b) => a - b);
+                  const activeRound = groupRound[stage.id] ?? allRounds[0] ?? 1;
 
-                      return (
-                        <div key={group.id}>
-                          <p style={{ fontSize: 12, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: '0 0 10px' }}>{group.name}</p>
-                          {gStandings.length > 0 && (
-                            <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden', marginBottom: 14 }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 28px 26px 26px 26px 28px 28px 32px', gap: 0, padding: '7px 12px', background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                {['#', 'Equipo', 'PJ', 'G', 'E', 'P', 'GF', 'GC', 'Pts'].map((h, i) => (
-                                  <span key={h} style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 1, textAlign: i > 1 ? 'center' : 'left' }}>{h}</span>
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+
+                      {/* LEFT — Group standings */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {stageGroups.map(group => {
+                          const gStandings = groupRows.filter(r => r.group_id === group.id).sort((a, b) => {
+                            if (b.points !== a.points) return b.points - a.points;
+                            return (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against);
+                          });
+                          return (
+                            <div key={group.id}>
+                              <p style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: '0 0 8px' }}>{group.name}</p>
+                              <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '18px 1fr 26px 24px 24px 24px 26px 26px 30px', gap: 0, padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                  {['#', 'Equipo', 'PJ', 'G', 'E', 'P', 'GF', 'GC', 'Pts'].map((h, i) => (
+                                    <span key={h} style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 1, textAlign: i > 1 ? 'center' : 'left' }}>{h}</span>
+                                  ))}
+                                </div>
+                                {gStandings.length === 0 ? (
+                                  <div style={{ padding: '10px 10px', fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>Sin equipos</div>
+                                ) : gStandings.map((row, idx) => (
+                                  <div key={row.team_id ?? idx} style={{ display: 'grid', gridTemplateColumns: '18px 1fr 26px 24px 24px 24px 26px 26px 30px', gap: 0, padding: '7px 10px', background: idx === 0 ? 'rgba(34,197,94,0.05)' : 'transparent', borderBottom: idx < gStandings.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: idx === 0 ? '#22c55e' : 'rgba(255,255,255,0.3)' }}>{idx + 1}</span>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{teamMap[row.team_id ?? '']?.name ?? '—'}</span>
+                                    {[row.played, row.won, row.drawn, row.lost, row.goals_for, row.goals_against].map((v, vi) => (
+                                      <span key={vi} style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', textAlign: 'center', fontWeight: 600 }}>{v}</span>
+                                    ))}
+                                    <span style={{ fontSize: 13, fontWeight: 900, color: '#fff', textAlign: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: 5, padding: '1px 0' }}>{row.points}</span>
+                                  </div>
                                 ))}
                               </div>
-                              {gStandings.map((row, idx) => (
-                                <div key={row.team_id ?? idx} style={{ display: 'grid', gridTemplateColumns: '20px 1fr 28px 26px 26px 26px 28px 28px 32px', gap: 0, padding: '8px 12px', background: idx < 2 ? 'rgba(34,197,94,0.04)' : 'transparent', borderBottom: idx < gStandings.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', alignItems: 'center' }}>
-                                  <span style={{ fontSize: 12, fontWeight: 800, color: idx < 2 ? '#22c55e' : 'rgba(255,255,255,0.3)' }}>{idx + 1}</span>
-                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{teamMap[row.team_id ?? '']?.name ?? '—'}</span>
-                                  {[row.played, row.won, row.drawn, row.lost, row.goals_for, row.goals_against].map((v, vi) => (
-                                    <span key={vi} style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', fontWeight: 600 }}>{v}</span>
-                                  ))}
-                                  <span style={{ fontSize: 14, fontWeight: 900, color: '#fff', textAlign: 'center' }}>{row.points}</span>
-                                </div>
-                              ))}
                             </div>
-                          )}
-                          {rounds.map(round => (
-                            <div key={round} style={{ marginBottom: 12 }}>
-                              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Jornada {round}</p>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {byRound[round].map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} onClick={() => openEdit(m)} />)}
+                          );
+                        })}
+                      </div>
+
+                      {/* RIGHT — Round selector + matches */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Round selector chips */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase', flexShrink: 0 }}>Jornada</span>
+                          <div className="ll-rounds" style={{ display: 'flex', gap: 5, overflowX: 'auto', flex: 1 }}>
+                            {allRounds.map(r => {
+                              const active = activeRound === r;
+                              return (
+                                <button key={r} onClick={() => setGroupRound(prev => ({ ...prev, [stage.id]: r }))}
+                                  style={{ flexShrink: 0, padding: '5px 14px', borderRadius: 99, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: fontStack, background: active ? '#22c55e' : 'rgba(255,255,255,0.05)', border: `1px solid ${active ? '#22c55e' : 'rgba(255,255,255,0.08)'}`, color: active ? '#000' : 'rgba(255,255,255,0.5)', transition: 'all 0.15s' }}>
+                                  {r}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Matches for selected round, grouped by group */}
+                        {stageGroups.map(group => {
+                          const grpRoundMatches = visibleMatches.filter(m => m.group_id === group.id && m.match_round === activeRound);
+                          if (grpRoundMatches.length === 0) return null;
+                          return (
+                            <div key={group.id}>
+                              <p style={{ fontSize: 10, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: '0 0 6px' }}>{group.name}</p>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {grpRoundMatches.map(m => <MatchCard key={m.id} match={m} teamMap={teamMap} onClick={() => openEdit(m)} />)}
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                          );
+                        })}
+
+                        {/* Empty state */}
+                        {stageGroups.every(g => visibleMatches.filter(m => m.group_id === g.id && m.match_round === activeRound).length === 0) && (
+                          <div style={{ textAlign: 'center', padding: '24px', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '1px dashed rgba(255,255,255,0.06)' }}>
+                            <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 12, margin: 0 }}>Sin partidos en esta jornada</p>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  );
+                })()}
 
                 {/* Group stage without groups */}
                 {!isKnockout && !hasGroups && (() => {
@@ -547,8 +741,15 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
 
                 {/* Knockout stage */}
                 {isKnockout && (() => {
+                  // Derive bracket size from round-1 match count (accurate for grupos-copa where
+                  // knockout teams < total confirmed teams)
+                  const round1Count = stage.matches.filter(m => m.match_round === 1).length;
                   let bracketSize = 1;
-                  while (bracketSize < teams.length) bracketSize *= 2;
+                  if (round1Count > 0) {
+                    while (bracketSize < round1Count * 2) bracketSize *= 2;
+                  } else {
+                    while (bracketSize < teams.length) bracketSize *= 2;
+                  }
                   const totalExpectedRounds = Math.max(1, Math.log2(bracketSize));
                   const expectedRounds = Array.from({ length: totalExpectedRounds }, (_, i) => i + 1);
                   const existingRoundSet = new Set(stage.matches.map(m => m.match_round));
