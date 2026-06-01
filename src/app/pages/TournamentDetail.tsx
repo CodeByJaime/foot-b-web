@@ -22,6 +22,11 @@ interface Torneo {
   level: string | null;
   gender: string | null;
   ubication_id: string | null;
+  prizes: Array<{ label: string; amount: number }> | null;
+  venues: string[] | null;
+  format_description: string | null;
+  registration_fee: number | null;
+  total_teams: number | null;
 }
 
 interface TorneoTeam {
@@ -55,7 +60,7 @@ interface TopScorer {
   TEAM: { name: string } | null;
 }
 
-type TabId = 'participantes' | 'tabla' | 'llaves' | 'partidos' | 'goleadores';
+type TabId = 'participantes' | 'premios' | 'tabla' | 'llaves' | 'partidos' | 'goleadores';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +77,10 @@ function safeDate(raw: string | null | undefined, opts: Intl.DateTimeFormatOptio
   if (!raw) return '—';
   const d = new Date(raw);
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('es-ES', opts);
+}
+
+function fmtMoney(amount: number): string {
+  return `$${amount.toLocaleString('es-CO')}`;
 }
 
 const CARD_GRADIENTS = [
@@ -100,6 +109,13 @@ export default function TournamentDetail() {
   const [activeTab, setActiveTab]     = useState<TabId>('participantes');
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const [removing, setRemoving]       = useState(false);
+  const [editingPremios, setEditingPremios] = useState(false);
+  const [editPrizes, setEditPrizes]   = useState<Array<{ label: string; amount: number }>>([]);
+  const [editVenues, setEditVenues]   = useState<string[]>([]);
+  const [editFormatDesc, setEditFormatDesc] = useState('');
+  const [editRegFee, setEditRegFee]   = useState('');
+  const [editTotalTeams, setEditTotalTeams] = useState('');
+  const [savingPremios, setSavingPremios] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -145,6 +161,34 @@ export default function TournamentDetail() {
       .then(({ data }) => setScorers((data ?? []) as unknown as TopScorer[]));
   }, [teams]);
 
+  const startEditPremios = () => {
+    if (!torneo) return;
+    setEditPrizes(torneo.prizes ?? []);
+    setEditVenues(torneo.venues ?? []);
+    setEditFormatDesc(torneo.format_description ?? '');
+    setEditRegFee(torneo.registration_fee?.toString() ?? '');
+    setEditTotalTeams(torneo.total_teams?.toString() ?? '');
+    setEditingPremios(true);
+  };
+
+  const handleSavePremios = async () => {
+    if (!id || !torneo) return;
+    setSavingPremios(true);
+    const updates = {
+      prizes: editPrizes,
+      venues: editVenues,
+      format_description: editFormatDesc || null,
+      registration_fee: editRegFee ? Number(editRegFee) : null,
+      total_teams: editTotalTeams ? Number(editTotalTeams) : null,
+    };
+    const { error } = await supabase.from('TORNEO').update(updates).eq('id', id);
+    if (!error) {
+      setTorneo(prev => prev ? { ...prev, ...updates } : null);
+      setEditingPremios(false);
+    }
+    setSavingPremios(false);
+  };
+
   const handleRemoveTeam = async (torneoTeamId: string) => {
     setRemoving(true);
     const { error } = await supabase.from('TORNEO_TEAMS').delete().eq('id', torneoTeamId);
@@ -187,12 +231,14 @@ export default function TournamentDetail() {
   const TABS: { id: TabId; label: string }[] = torneo.type === 'league'
     ? [
         { id: 'participantes', label: 'Participantes' },
+        { id: 'premios',       label: 'Premios' },
         { id: 'tabla',         label: 'Tabla' },
         { id: 'partidos',      label: 'Partidos' },
         { id: 'goleadores',    label: 'Goleadores' },
       ]
     : [
         { id: 'participantes', label: 'Participantes' },
+        { id: 'premios',       label: 'Premios' },
         { id: 'llaves',        label: 'Llaves' },
         { id: 'partidos',      label: 'Partidos' },
         { id: 'goleadores',    label: 'Goleadores' },
@@ -366,6 +412,155 @@ export default function TournamentDetail() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* ── Premios ── */}
+            {activeTab === 'premios' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase' }}>Información del torneo</span>
+                  {!editingPremios ? (
+                    <button onClick={startEditPremios} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      ✎ Editar
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setEditingPremios(false)} style={{ padding: '6px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                      <button onClick={handleSavePremios} disabled={savingPremios} style={{ padding: '6px 14px', borderRadius: 8, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontSize: 12, fontWeight: 800, cursor: savingPremios ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: savingPremios ? 0.5 : 1 }}>
+                        {savingPremios ? 'Guardando...' : 'Guardar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {editingPremios ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* Inscripción + Total equipos */}
+                    <div style={{ background: '#0d1117', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', padding: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 }}>Inscripción y equipos</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 6 }}>Inscripción por equipo ($)</label>
+                          <input type="number" value={editRegFee} onChange={e => setEditRegFee(e.target.value)} placeholder="600000" style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 6 }}>Total equipos</label>
+                          <input type="number" value={editTotalTeams} onChange={e => setEditTotalTeams(e.target.value)} placeholder="32" style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Premios */}
+                    <div style={{ background: '#0d1117', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', padding: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, textTransform: 'uppercase' }}>Premios</p>
+                        <button onClick={() => setEditPrizes(prev => [...prev, { label: '', amount: 0 }])} style={{ padding: '4px 10px', borderRadius: 6, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>+ Añadir</button>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {editPrizes.map((p, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input value={p.label} onChange={e => { const next = [...editPrizes]; next[i] = { ...next[i], label: e.target.value }; setEditPrizes(next); }} placeholder="Ej: Campeón" style={{ flex: 2, padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                            <input type="number" value={p.amount || ''} onChange={e => { const next = [...editPrizes]; next[i] = { ...next[i], amount: Number(e.target.value) }; setEditPrizes(next); }} placeholder="Monto" style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                            <button onClick={() => setEditPrizes(prev => prev.filter((_, j) => j !== i))} style={{ width: 30, height: 30, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>×</button>
+                          </div>
+                        ))}
+                        {editPrizes.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif" }}>Sin premios. Haz clic en "+ Añadir".</p>}
+                      </div>
+                    </div>
+
+                    {/* Canchas */}
+                    <div style={{ background: '#0d1117', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', padding: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, textTransform: 'uppercase' }}>Canchas</p>
+                        <button onClick={() => setEditVenues(prev => [...prev, ''])} style={{ padding: '4px 10px', borderRadius: 6, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>+ Añadir</button>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {editVenues.map((v, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input value={v} onChange={e => { const next = [...editVenues]; next[i] = e.target.value; setEditVenues(next); }} placeholder="Nombre de la cancha" style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                            <button onClick={() => setEditVenues(prev => prev.filter((_, j) => j !== i))} style={{ width: 30, height: 30, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>×</button>
+                          </div>
+                        ))}
+                        {editVenues.length === 0 && <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif" }}>Sin canchas. Haz clic en "+ Añadir".</p>}
+                      </div>
+                    </div>
+
+                    {/* Formato */}
+                    <div style={{ background: '#0d1117', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', padding: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 }}>Formato</p>
+                      <textarea value={editFormatDesc} onChange={e => setEditFormatDesc(e.target.value)} placeholder="Ej: Ida y vuelta, luego octavos, cuartos, semis y final a partido único." rows={3} style={{ width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#f1f5f9', fontSize: 13, fontFamily: "'Barlow', sans-serif", outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {/* Inscripción + Total equipos */}
+                    {(torneo.registration_fee || torneo.total_teams) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px,1fr))', gap: 10 }}>
+                        {torneo.registration_fee && (
+                          <div style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.06))', borderRadius: 14, border: '1px solid rgba(34,197,94,0.2)', padding: '16px 18px' }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(34,197,94,0.7)', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 6 }}>Inscripción por equipo</p>
+                            <p style={{ fontSize: 22, fontWeight: 900, color: '#22c55e' }}>{fmtMoney(torneo.registration_fee)}</p>
+                          </div>
+                        )}
+                        {torneo.total_teams && (
+                          <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)', padding: '16px 18px' }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 6 }}>Total equipos</p>
+                            <p style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9' }}>{torneo.total_teams}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Premios */}
+                    {torneo.prizes && torneo.prizes.length > 0 && (
+                      <div style={{ background: '#0d1117', borderRadius: 14, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: 1.5, textTransform: 'uppercase' }}>Premios</span>
+                        </div>
+                        {torneo.prizes.map((prize, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: i < (torneo.prizes?.length ?? 0) - 1 ? '1px solid rgba(255,255,255,0.04)' : undefined }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.75)', fontFamily: "'Barlow', sans-serif" }}>{prize.label}</span>
+                            <span style={{ fontSize: 15, fontWeight: 900, color: i === 0 ? '#fbbf24' : i === 1 ? '#94a3b8' : i === 2 ? '#fb923c' : '#22c55e' }}>{fmtMoney(prize.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Canchas */}
+                    {torneo.venues && torneo.venues.length > 0 && (
+                      <div style={{ background: '#0d1117', borderRadius: 14, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: 1.5, textTransform: 'uppercase' }}>Canchas</span>
+                        </div>
+                        <div style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {torneo.venues.map((v, i) => (
+                            <span key={i} style={{ padding: '6px 14px', borderRadius: 20, background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.2)', color: '#60a5fa', fontSize: 13, fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>{v}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Formato */}
+                    {torneo.format_description && (
+                      <div style={{ background: '#0d1117', borderRadius: 14, border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: 1.5, textTransform: 'uppercase' }}>Formato</span>
+                        </div>
+                        <p style={{ padding: '14px 16px', fontSize: 14, color: '#f1f5f9', fontFamily: "'Barlow', sans-serif", lineHeight: 1.65, fontWeight: 500 }}>{torneo.format_description}</p>
+                      </div>
+                    )}
+
+                    {/* Empty state */}
+                    {!torneo.registration_fee && !torneo.total_teams && (!torneo.prizes || torneo.prizes.length === 0) && (!torneo.venues || torneo.venues.length === 0) && !torneo.format_description && (
+                      <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif", marginBottom: 8 }}>No hay información de premios aún.</p>
+                        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.12)', fontFamily: "'Barlow', sans-serif" }}>Haz clic en "✎ Editar" para añadir premios, canchas y formato.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

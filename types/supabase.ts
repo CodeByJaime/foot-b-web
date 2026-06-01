@@ -804,50 +804,65 @@ export type Database = {
         Row: {
           created_at: string
           end_date: string | null
+          format_description: string | null
           gender: string | null
           id: string
           level: string | null
           logo: string | null
           name: string | null
           period: string | null
+          prizes: Json | null
+          registration_fee: number | null
           season: string | null
           start_date: string | null
           status: string | null
           teams_count: number
+          total_teams: number | null
           type: string | null
           ubication_id: string | null
+          venues: Json | null
         }
         Insert: {
           created_at?: string
           end_date?: string | null
+          format_description?: string | null
           gender?: string | null
           id?: string
           level?: string | null
           logo?: string | null
           name?: string | null
           period?: string | null
+          prizes?: Json | null
+          registration_fee?: number | null
           season?: string | null
           start_date?: string | null
           status?: string | null
           teams_count?: number
+          total_teams?: number | null
           type?: string | null
           ubication_id?: string | null
+          venues?: Json | null
         }
         Update: {
           created_at?: string
           end_date?: string | null
+          format_description?: string | null
           gender?: string | null
           id?: string
           level?: string | null
           logo?: string | null
           name?: string | null
           period?: string | null
+          prizes?: Json | null
+          registration_fee?: number | null
           season?: string | null
           start_date?: string | null
           status?: string | null
           teams_count?: number
+          total_teams?: number | null
           type?: string | null
           ubication_id?: string | null
+          venues?: Json | null
         }
         Relationships: [
           {
