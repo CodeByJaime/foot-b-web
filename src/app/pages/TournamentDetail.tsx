@@ -109,6 +109,9 @@ export default function TournamentDetail() {
   const [activeTab, setActiveTab]     = useState<TabId>('participantes');
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const [removing, setRemoving]       = useState(false);
+  const [pendingApprove, setPendingApprove] = useState<string | null>(null);
+  const [pendingReject, setPendingReject]   = useState<string | null>(null);
+  const [actioning, setActioning]           = useState(false);
   const [editingPremios, setEditingPremios] = useState(false);
   const [editPrizes, setEditPrizes]   = useState<Array<{ label: string; amount: number }>>([]);
   const [editVenues, setEditVenues]   = useState<string[]>([]);
@@ -195,6 +198,22 @@ export default function TournamentDetail() {
     if (!error) setTeams(prev => prev.filter(t => t.id !== torneoTeamId));
     setPendingRemove(null);
     setRemoving(false);
+  };
+
+  const handleApproveTeam = async (torneoTeamId: string) => {
+    setActioning(true);
+    const { error } = await supabase.from('TORNEO_TEAMS').update({ status: 'confirmed' }).eq('id', torneoTeamId);
+    if (!error) setTeams(prev => prev.map(t => t.id === torneoTeamId ? { ...t, status: 'confirmed' } : t));
+    setPendingApprove(null);
+    setActioning(false);
+  };
+
+  const handleRejectTeam = async (torneoTeamId: string) => {
+    setActioning(true);
+    const { error } = await supabase.from('TORNEO_TEAMS').update({ status: 'rejected' }).eq('id', torneoTeamId);
+    if (!error) setTeams(prev => prev.filter(t => t.id !== torneoTeamId));
+    setPendingReject(null);
+    setActioning(false);
   };
 
   // ── Loading ──
@@ -360,11 +379,18 @@ export default function TournamentDetail() {
                 {teams.length === 0 ? (
                   <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, fontFamily: "'Barlow', sans-serif" }}>No hay equipos inscritos aún</p>
                 ) : teams.map((t, i) => {
-                  const isConfirmed = t.status === 'confirmed';
-                  const isPending   = pendingRemove === t.id;
+                  const isConfirmed  = t.status === 'confirmed';
+                  const isPending    = t.status === 'pending';
+                  const isRemovePending  = pendingRemove === t.id;
+                  const isApprovePending = pendingApprove === t.id;
+                  const isRejectPending  = pendingReject === t.id;
+
+                  const statusBg    = isConfirmed ? 'rgba(22,163,74,0.12)'  : isPending ? 'rgba(234,179,8,0.12)' : 'rgba(239,68,68,0.12)';
+                  const statusColor = isConfirmed ? '#22c55e'                : isPending ? '#eab308'              : '#ef4444';
+                  const statusLabel = isConfirmed ? 'Confirmado'             : isPending ? 'En espera'            : 'Rechazado';
 
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: isPending ? 'rgba(239,68,68,0.06)' : '#0d1117', border: `1px solid ${isPending ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.06)'}`, transition: 'border-color 0.2s, background 0.2s' }}>
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: isRemovePending || isRejectPending ? 'rgba(239,68,68,0.06)' : isApprovePending ? 'rgba(22,163,74,0.06)' : '#0d1117', border: `1px solid ${isRemovePending || isRejectPending ? 'rgba(239,68,68,0.3)' : isApprovePending ? 'rgba(22,163,74,0.3)' : 'rgba(255,255,255,0.06)'}`, transition: 'border-color 0.2s, background 0.2s' }}>
                       <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.2)', width: 24, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
                       <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][0]}, ${CARD_GRADIENTS[i % CARD_GRADIENTS.length][1]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
                         {t.TEAM?.name?.[0] ?? '?'}
@@ -372,31 +398,46 @@ export default function TournamentDetail() {
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.TEAM?.name ?? 'Equipo'}</p>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: isConfirmed ? 'rgba(22,163,74,0.12)' : 'rgba(217,119,6,0.12)', color: isConfirmed ? '#22c55e' : '#d97706', letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                          {isConfirmed ? 'Confirmado' : 'Pendiente'}
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: statusBg, color: statusColor, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          {statusLabel}
                         </span>
                       </div>
 
-                      {/* Actions */}
-                      {isPending ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                          <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>¿Eliminar?</span>
+                      {/* ── Acciones según status ── */}
+                      {isPending && !isApprovePending && !isRejectPending && (
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                           <button
-                            onClick={() => handleRemoveTeam(t.id)}
-                            disabled={removing}
-                            style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: removing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: removing ? 0.5 : 1 }}
+                            onClick={() => setPendingApprove(t.id)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, background: 'rgba(22,163,74,0.12)', border: '1px solid rgba(22,163,74,0.3)', color: '#22c55e', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
                           >
-                            Sí
+                            ✓ Aprobar
                           </button>
                           <button
-                            onClick={() => setPendingRemove(null)}
-                            disabled={removing}
-                            style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
+                            onClick={() => setPendingReject(t.id)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
                           >
-                            No
+                            ✕ Rechazar
                           </button>
                         </div>
-                      ) : (
+                      )}
+
+                      {isPending && isApprovePending && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>¿Aprobar?</span>
+                          <button onClick={() => handleApproveTeam(t.id)} disabled={actioning} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(22,163,74,0.15)', border: '1px solid rgba(22,163,74,0.4)', color: '#22c55e', fontSize: 12, fontWeight: 800, cursor: actioning ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: actioning ? 0.5 : 1 }}>Sí</button>
+                          <button onClick={() => setPendingApprove(null)} disabled={actioning} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>No</button>
+                        </div>
+                      )}
+
+                      {isPending && isRejectPending && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>¿Rechazar?</span>
+                          <button onClick={() => handleRejectTeam(t.id)} disabled={actioning} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: actioning ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: actioning ? 0.5 : 1 }}>Sí</button>
+                          <button onClick={() => setPendingReject(null)} disabled={actioning} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>No</button>
+                        </div>
+                      )}
+
+                      {isConfirmed && !isRemovePending && (
                         <button
                           onClick={() => setPendingRemove(t.id)}
                           title="Eliminar del torneo"
@@ -408,6 +449,14 @@ export default function TournamentDetail() {
                             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
                           </svg>
                         </button>
+                      )}
+
+                      {isConfirmed && isRemovePending && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, fontFamily: "'Barlow', sans-serif" }}>¿Eliminar?</span>
+                          <button onClick={() => handleRemoveTeam(t.id)} disabled={removing} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: removing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: removing ? 0.5 : 1 }}>Sí</button>
+                          <button onClick={() => setPendingRemove(null)} disabled={removing} style={{ padding: '5px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>No</button>
+                        </div>
                       )}
                     </div>
                   );

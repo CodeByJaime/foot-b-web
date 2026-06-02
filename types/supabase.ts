@@ -827,6 +827,7 @@ export type Database = {
           id: string
           level: string | null
           logo: string | null
+          modality: string | null
           name: string | null
           period: string | null
           prizes: Json | null
@@ -848,6 +849,7 @@ export type Database = {
           id?: string
           level?: string | null
           logo?: string | null
+          modality?: string | null
           name?: string | null
           period?: string | null
           prizes?: Json | null
@@ -869,6 +871,7 @@ export type Database = {
           id?: string
           level?: string | null
           logo?: string | null
+          modality?: string | null
           name?: string | null
           period?: string | null
           prizes?: Json | null
