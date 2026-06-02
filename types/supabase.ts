@@ -208,6 +208,7 @@ export type Database = {
       }
       MATCH: {
         Row: {
+          arrival_time: string | null
           away_score: number | null
           away_team_id: string | null
           bet: string | null
@@ -215,16 +216,21 @@ export type Database = {
           created_by: string | null
           date: string | null
           description: string | null
+          goalkeeper_free: boolean
           group_id: string | null
           home_score: number | null
           home_team_id: string | null
           id: string
           is_open: boolean
+          location_url: string | null
           match_round: number | null
+          match_type: string | null
           max_players: number | null
           next_match_id: string | null
+          payment_info: string | null
           place: string | null
           referee: string | null
+          rules: string | null
           stage_id: string | null
           status: string | null
           team_id: string | null
@@ -232,6 +238,7 @@ export type Database = {
           ubication_id: string | null
         }
         Insert: {
+          arrival_time?: string | null
           away_score?: number | null
           away_team_id?: string | null
           bet?: string | null
@@ -239,16 +246,21 @@ export type Database = {
           created_by?: string | null
           date?: string | null
           description?: string | null
+          goalkeeper_free?: boolean
           group_id?: string | null
           home_score?: number | null
           home_team_id?: string | null
           id?: string
           is_open?: boolean
+          location_url?: string | null
           match_round?: number | null
+          match_type?: string | null
           max_players?: number | null
           next_match_id?: string | null
+          payment_info?: string | null
           place?: string | null
           referee?: string | null
+          rules?: string | null
           stage_id?: string | null
           status?: string | null
           team_id?: string | null
@@ -256,6 +268,7 @@ export type Database = {
           ubication_id?: string | null
         }
         Update: {
+          arrival_time?: string | null
           away_score?: number | null
           away_team_id?: string | null
           bet?: string | null
@@ -263,16 +276,21 @@ export type Database = {
           created_by?: string | null
           date?: string | null
           description?: string | null
+          goalkeeper_free?: boolean
           group_id?: string | null
           home_score?: number | null
           home_team_id?: string | null
           id?: string
           is_open?: boolean
+          location_url?: string | null
           match_round?: number | null
+          match_type?: string | null
           max_players?: number | null
           next_match_id?: string | null
+          payment_info?: string | null
           place?: string | null
           referee?: string | null
+          rules?: string | null
           stage_id?: string | null
           status?: string | null
           team_id?: string | null
@@ -1211,17 +1229,35 @@ export type Database = {
         Args: { p_challenge_id: string }
         Returns: undefined
       }
-      create_individual_match: {
-        Args: {
-          p_bet?: string
-          p_date: string
-          p_description?: string
-          p_max_players: number
-          p_place: string
-          p_profile_id: string
-        }
-        Returns: string
-      }
+      create_individual_match:
+        | {
+            Args: {
+              p_bet?: string
+              p_date: string
+              p_description?: string
+              p_max_players: number
+              p_place: string
+              p_profile_id: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_arrival_time?: string
+              p_bet?: string
+              p_date: string
+              p_description?: string
+              p_goalkeeper_free?: boolean
+              p_location_url?: string
+              p_match_type?: string
+              p_max_players: number
+              p_payment_info?: string
+              p_place: string
+              p_profile_id: string
+              p_rules?: string
+            }
+            Returns: string
+          }
       create_team: {
         Args: { p_name: string; p_profile_id: string }
         Returns: string
@@ -1275,16 +1311,22 @@ export type Database = {
       get_open_individual_matches: {
         Args: { p_profile_id: string }
         Returns: {
+          arrival_time: string
           bet: string
           created_by: string
           current_players: number
           date: string
           description: string
+          goalkeeper_free: boolean
+          location_url: string
           match_id: string
+          match_type: string
           max_players: number
           municipality_name: string
           participants: Json
+          payment_info: string
           place: string
+          rules: string
           state_name: string
           status: string
         }[]
@@ -1349,6 +1391,7 @@ export type Database = {
           match_type: string
           place: string
           status: string
+          torneo_name: string
         }[]
       }
       get_team_challenges_received: {
