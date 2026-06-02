@@ -209,9 +209,10 @@ interface Props {
 }
 
 export default function LlavesTab({ tournamentId, teams }: Props) {
-  const [stages,    setStages]    = useState<Stage[]>([]);
-  const [groups,    setGroups]    = useState<Group[]>([]);
-  const [groupRows, setGroupRows] = useState<GroupRow[]>([]);
+  const [stages,         setStages]         = useState<Stage[]>([]);
+  const [groups,         setGroups]         = useState<Group[]>([]);
+  const [groupRows,      setGroupRows]      = useState<GroupRow[]>([]);
+  const [stageStandings, setStageStandings] = useState<any[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [format,    setFormat]    = useState<FixtureFormat>('grupos-copa');
   const [gruposConfig, setGruposConfig] = useState<GruposConfig>({
@@ -260,6 +261,18 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
         setGroupRows((grpTeams ?? []) as GroupRow[]);
       } else {
         setGroupRows([]);
+      }
+
+      const groupStageIds = stg.filter((s: any) => s.type === 'group').map((s: any) => s.id);
+      if (groupStageIds.length > 0) {
+        const { data: stdData } = await supabase
+          .from('TORNEO_STANDING')
+          .select('team_id, stage_id, played, won, drawn, lost, goals_for, goals_against, goal_difference, points')
+          .eq('torneo_id', tournamentId)
+          .in('stage_id', groupStageIds);
+        setStageStandings(stdData ?? []);
+      } else {
+        setStageStandings([]);
       }
       const stagesWithMatches = stg.map((s: any) => ({
         ...s,
@@ -400,7 +413,7 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
       await supabase.from('MATCH').delete().in('stage_id', stageIds);
       await supabase.from('TORNEO_STAGE').delete().in('id', stageIds);
     }
-    setStages([]); setGroups([]); setGroupRows([]);
+    setStages([]); setGroups([]); setGroupRows([]); setStageStandings([]);
     setResetting(false);
   };
 
@@ -639,10 +652,16 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
                       {/* LEFT — Group standings */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                         {stageGroups.map(group => {
-                          const gStandings = groupRows.filter(r => r.group_id === group.id).sort((a, b) => {
-                            if (b.points !== a.points) return b.points - a.points;
-                            return (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against);
-                          });
+                          const gStandings = groupRows
+                            .filter(r => r.group_id === group.id)
+                            .map(r => {
+                              const live = stageStandings.find(s => s.team_id === r.team_id && s.stage_id === stage.id);
+                              return live ? { ...r, ...live } : r;
+                            })
+                            .sort((a, b) => {
+                              if (b.points !== a.points) return b.points - a.points;
+                              return (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against);
+                            });
                           return (
                             <div key={group.id}>
                               <p style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: '0 0 8px' }}>{group.name}</p>

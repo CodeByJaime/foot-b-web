@@ -23,7 +23,35 @@ interface Match {
   match_round: number | null;
 }
 
+interface Player {
+  id: string;
+  name: string;
+  lastname: string | null;
+  position: string | null;
+  goals: number;
+  assists: number;
+  yellow_cards: number;
+  red_cards: number;
+  team_id: string;
+}
+
+interface MatchEventLocal {
+  uid: string;
+  type: 'goal' | 'assist' | 'yellow_card' | 'red_card';
+  player_id: string;
+  player_name: string;
+  team_side: 'home' | 'away';
+  reason: string;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const EVT_TYPES = [
+  { value: 'goal'        as const, icon: '⚽', label: 'Gol',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  { value: 'assist'      as const, icon: '🎯', label: 'Asistencia', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)'  },
+  { value: 'yellow_card' as const, icon: '🟡', label: 'Amarilla',   color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  { value: 'red_card'    as const, icon: '🔴', label: 'Roja',       color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+];
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; border: string }> = {
   scheduled: { label: 'Programado',  color: '#60a5fa', bg: 'rgba(96,165,250,0.1)',  border: 'rgba(96,165,250,0.2)'  },
@@ -73,6 +101,14 @@ export default function PartidosTab({ tournamentId, teamCount }: Props) {
   const [editAway,   setEditAway]   = useState('');
   const [saving,     setSaving]     = useState(false);
 
+  const [homePlayers,  setHomePlayers]  = useState<Player[]>([]);
+  const [awayPlayers,  setAwayPlayers]  = useState<Player[]>([]);
+  const [matchEvents,  setMatchEvents]  = useState<MatchEventLocal[]>([]);
+  const [newEvtType,   setNewEvtType]   = useState<MatchEventLocal['type']>('goal');
+  const [newEvtSide,   setNewEvtSide]   = useState<'home' | 'away'>('home');
+  const [newEvtPlayer, setNewEvtPlayer] = useState('');
+  const [newEvtReason, setNewEvtReason] = useState('');
+
   const fontStack = "'Barlow Condensed', system-ui, sans-serif";
 
   const load = useCallback(async () => {
@@ -116,11 +152,31 @@ export default function PartidosTab({ tournamentId, teamCount }: Props) {
     setActiveRound(1);
   }, [activeStage]);
 
-  const openEdit = (m: Match) => {
+  const openEdit = async (m: Match) => {
     setEditMatch(m);
     setEditStatus(m.status ?? 'scheduled');
     setEditHome(m.home_score?.toString() ?? '');
     setEditAway(m.away_score?.toString() ?? '');
+    setMatchEvents([]);
+    setNewEvtType('goal');
+    setNewEvtSide('home');
+    setNewEvtPlayer('');
+    setNewEvtReason('');
+
+    const teamIds = [m.home_team_id, m.away_team_id].filter(Boolean) as string[];
+    if (teamIds.length > 0) {
+      const { data } = await supabase
+        .from('GUEST_PLAYER')
+        .select('id, name, lastname, position, goals, assists, yellow_cards, red_cards, team_id')
+        .in('team_id', teamIds)
+        .eq('is_active', true)
+        .order('name');
+      const all = (data ?? []) as Player[];
+      setHomePlayers(all.filter(p => p.team_id === m.home_team_id));
+      setAwayPlayers(all.filter(p => p.team_id === m.away_team_id));
+    } else {
+      setHomePlayers([]); setAwayPlayers([]);
+    }
   };
 
   const handleSave = async () => {
@@ -137,7 +193,47 @@ export default function PartidosTab({ tournamentId, teamCount }: Props) {
       update.away_score = null;
     }
     const { error: e } = await supabase.from('MATCH').update(update).eq('id', editMatch.id);
-    if (e) setError(e.message);
+    if (e) { setError(e.message); setSaving(false); return; }
+
+    if (editStatus === 'finished' && update.home_score != null && update.away_score != null) {
+      const rpcCalls = [editMatch.home_team_id, editMatch.away_team_id]
+        .filter(Boolean)
+        .map(teamId =>
+          supabase.rpc('update_team_standing_v2', {
+            p_team_id: teamId,
+            p_torneo_id: tournamentId,
+            p_stage_id: editMatch.stage_id,
+          })
+        );
+      const results = await Promise.all(rpcCalls);
+      const rpcError = results.find(r => r.error)?.error;
+      if (rpcError) setError(rpcError.message);
+    }
+
+    // Update player stats for recorded events
+    if (matchEvents.length > 0) {
+      const allPlayers = [...homePlayers, ...awayPlayers];
+      const deltaMap = new Map<string, { goals: number; assists: number; yellow_cards: number; red_cards: number }>();
+      for (const evt of matchEvents) {
+        if (!deltaMap.has(evt.player_id)) deltaMap.set(evt.player_id, { goals: 0, assists: 0, yellow_cards: 0, red_cards: 0 });
+        const d = deltaMap.get(evt.player_id)!;
+        if (evt.type === 'goal')        d.goals        += 1;
+        if (evt.type === 'assist')      d.assists      += 1;
+        if (evt.type === 'yellow_card') d.yellow_cards += 1;
+        if (evt.type === 'red_card')    d.red_cards    += 1;
+      }
+      await Promise.all([...deltaMap.entries()].map(([pid, delta]) => {
+        const pl = allPlayers.find(p => p.id === pid);
+        if (!pl) return Promise.resolve();
+        return supabase.from('GUEST_PLAYER').update({
+          goals:        pl.goals        + delta.goals,
+          assists:      pl.assists      + delta.assists,
+          yellow_cards: pl.yellow_cards + delta.yellow_cards,
+          red_cards:    pl.red_cards    + delta.red_cards,
+        }).eq('id', pid);
+      }));
+    }
+
     setEditMatch(null);
     await load();
     setSaving(false);
@@ -400,6 +496,139 @@ export default function PartidosTab({ tournamentId, teamCount }: Props) {
                   </div>
                 </div>
               )}
+
+              {/* Events */}
+              {showScore && (() => {
+                const currentSidePlayers = newEvtSide === 'home' ? homePlayers : awayPlayers;
+                const hasPlayers = homePlayers.length > 0 || awayPlayers.length > 0;
+                const evtCfg = EVT_TYPES.find(t => t.value === newEvtType)!;
+                const isCard = newEvtType === 'yellow_card' || newEvtType === 'red_card';
+
+                const homeScore = parseInt(editHome || '0', 10) || 0;
+                const awayScore = parseInt(editAway || '0', 10) || 0;
+                const homeGoalCount = matchEvents.filter(e => e.type === 'goal' && e.team_side === 'home').length;
+                const awayGoalCount = matchEvents.filter(e => e.type === 'goal' && e.team_side === 'away').length;
+                const goalLimitReached = newEvtType === 'goal' && (
+                  newEvtSide === 'home' ? homeGoalCount >= homeScore : awayGoalCount >= awayScore
+                );
+                const canAdd = !!newEvtPlayer && !goalLimitReached;
+
+                const sideLabel = (side: 'home' | 'away') =>
+                  side === 'home' ? home?.name ?? 'Local' : away?.name ?? 'Visitante';
+
+                const addEvent = () => {
+                  const player = currentSidePlayers.find(p => p.id === newEvtPlayer);
+                  if (!player || goalLimitReached) return;
+                  setMatchEvents(prev => [...prev, {
+                    uid: Math.random().toString(36).slice(2),
+                    type: newEvtType,
+                    player_id: player.id,
+                    player_name: [player.name, player.lastname].filter(Boolean).join(' '),
+                    team_side: newEvtSide,
+                    reason: newEvtReason.trim(),
+                  }]);
+                  setNewEvtPlayer('');
+                  setNewEvtReason('');
+                };
+
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={labelStyle}>Eventos del partido</span>
+                      {matchEvents.length > 0 && (
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'Barlow', sans-serif" }}>
+                          {matchEvents.length} registrado{matchEvents.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+
+                    {!hasPlayers ? (
+                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontFamily: "'Barlow', sans-serif", margin: 0 }}>
+                        Los equipos no tienen jugadores registrados aún
+                      </p>
+                    ) : (
+                      <>
+                        {/* Type selector */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 5, marginBottom: 10 }}>
+                          {EVT_TYPES.map(t => (
+                            <button key={t.value} onClick={() => setNewEvtType(t.value)} style={{ padding: '7px 4px', borderRadius: 9, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700, fontFamily: fontStack, border: `1px solid ${newEvtType === t.value ? t.color : 'rgba(255,255,255,0.07)'}`, background: newEvtType === t.value ? t.bg : 'rgba(255,255,255,0.03)', color: newEvtType === t.value ? t.color : 'rgba(255,255,255,0.3)', transition: 'all 0.15s' }}>
+                              <span style={{ fontSize: 15 }}>{t.icon}</span>
+                              <span>{t.label}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Team + Player selectors */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isCard ? 8 : 10 }}>
+                          <select value={newEvtSide} onChange={e => { setNewEvtSide(e.target.value as 'home' | 'away'); setNewEvtPlayer(''); }} style={{ ...inputStyle, fontSize: 12, cursor: 'pointer' }}>
+                            <option value="home" style={{ background: '#0d1117' }}>
+                              {home?.name ?? 'Local'}{newEvtType === 'goal' ? ` (${homeGoalCount}/${homeScore})` : ''}
+                            </option>
+                            <option value="away" style={{ background: '#0d1117' }}>
+                              {away?.name ?? 'Visitante'}{newEvtType === 'goal' ? ` (${awayGoalCount}/${awayScore})` : ''}
+                            </option>
+                          </select>
+                          <select value={newEvtPlayer} onChange={e => setNewEvtPlayer(e.target.value)} style={{ ...inputStyle, fontSize: 12, cursor: 'pointer' }}>
+                            <option value="" style={{ background: '#0d1117' }}>Jugador...</option>
+                            {currentSidePlayers.map(p => (
+                              <option key={p.id} value={p.id} style={{ background: '#0d1117' }}>
+                                {[p.name, p.lastname].filter(Boolean).join(' ')}{p.position ? ` (${p.position})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Reason (cards only) */}
+                        {isCard && (
+                          <input type="text" value={newEvtReason} onChange={e => setNewEvtReason(e.target.value)} placeholder="Motivo (ej: falta grave, protestas...)" style={{ ...inputStyle, marginBottom: 10, fontSize: 13 }} />
+                        )}
+
+                        {/* Goal limit warning */}
+                        {goalLimitReached && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)', marginBottom: 10 }}>
+                            <AlertTriangle size={12} color="#f59e0b" />
+                            <span style={{ fontSize: 11, color: '#f59e0b', fontFamily: "'Barlow',sans-serif" }}>
+                              {sideLabel(newEvtSide)} ya tiene {newEvtSide === 'home' ? homeScore : awayScore} gol{(newEvtSide === 'home' ? homeScore : awayScore) !== 1 ? 'es' : ''} registrado{(newEvtSide === 'home' ? homeScore : awayScore) !== 1 ? 's' : ''} según el marcador
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Add button */}
+                        <button onClick={addEvent} disabled={!canAdd} style={{ width: '100%', padding: '9px', borderRadius: 10, cursor: canAdd ? 'pointer' : 'not-allowed', background: canAdd ? evtCfg.bg : 'rgba(255,255,255,0.04)', border: `1px solid ${canAdd ? evtCfg.color : 'rgba(255,255,255,0.07)'}`, color: canAdd ? evtCfg.color : 'rgba(255,255,255,0.2)', fontSize: 12, fontWeight: 800, fontFamily: fontStack, textTransform: 'uppercase', opacity: canAdd ? 1 : 0.5, transition: 'all 0.15s', marginBottom: matchEvents.length > 0 ? 12 : 0 }}>
+                          + Registrar {evtCfg.label}
+                        </button>
+
+                        {/* Events list */}
+                        {matchEvents.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 4 }} />
+                            {matchEvents.map(evt => {
+                              const cfg = EVT_TYPES.find(t => t.value === evt.type)!;
+                              return (
+                                <div key={evt.uid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                  <span style={{ fontSize: 14, flexShrink: 0 }}>{cfg.icon}</span>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9' }}>{evt.player_name}</span>
+                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginLeft: 5, fontFamily: "'Barlow',sans-serif" }}>
+                                      {evt.team_side === 'home' ? home?.name ?? 'Local' : away?.name ?? 'Visitante'}
+                                    </span>
+                                    {evt.reason && (
+                                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginLeft: 5, fontFamily: "'Barlow',sans-serif" }}>— {evt.reason}</span>
+                                    )}
+                                  </div>
+                                  <button onClick={() => setMatchEvents(prev => prev.filter(e => e.uid !== evt.uid))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.25)', padding: 4, display: 'flex', flexShrink: 0, transition: 'color 0.15s' }} onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.25)')}>
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: 10 }}>

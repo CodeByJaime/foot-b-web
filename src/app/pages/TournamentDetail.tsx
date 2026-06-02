@@ -129,7 +129,6 @@ export default function TournamentDetail() {
         supabase.from('TORNEO_STANDING')
           .select('team_id, played, won, drawn, lost, goals_for, goals_against, goal_difference, points, TEAM(name)')
           .eq('torneo_id', id)
-          .is('stage_id', null)
           .order('points', { ascending: false }),
       ]);
 
@@ -148,6 +147,7 @@ export default function TournamentDetail() {
   }, [id]);
 
   useEffect(() => {
+    if (activeTab !== 'goleadores') return;
     const confirmed = teams.filter(t => t.status === 'confirmed');
     if (confirmed.length === 0) return;
     const ids = confirmed.map(t => t.team_id);
@@ -159,7 +159,7 @@ export default function TournamentDetail() {
       .order('goals', { ascending: false })
       .limit(10)
       .then(({ data }) => setScorers((data ?? []) as unknown as TopScorer[]));
-  }, [teams]);
+  }, [teams, activeTab]);
 
   const startEditPremios = () => {
     if (!torneo) return;
