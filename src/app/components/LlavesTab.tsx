@@ -234,6 +234,11 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
   const [koRound,     setKoRound]     = useState<Record<string, number>>({});
   const [groupRound,  setGroupRound]  = useState<Record<string, number>>({});
 
+  const [moveGroup, setMoveGroup] = useState<Group | null>(null);
+  const [moveTeam,  setMoveTeam]  = useState<{ id: string; name: string } | null>(null);
+  const [moveDest,  setMoveDest]  = useState<Group | null>(null);
+  const [moving,    setMoving]    = useState(false);
+
   const fontStack = "'Barlow Condensed', system-ui, sans-serif";
 
   const loadFixture = useCallback(async () => {
@@ -415,6 +420,54 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
     }
     setStages([]); setGroups([]); setGroupRows([]); setStageStandings([]);
     setResetting(false);
+  };
+
+  const handleMoveTeam = async () => {
+    if (!moveGroup || !moveTeam || !moveDest || moving) return;
+    const stageId      = moveGroup.stage_id;
+    const srcGroupId   = moveGroup.id;
+    const dstGroupId   = moveDest.id;
+    const teamId       = moveTeam.id;
+    setMoving(true);
+    try {
+      await supabase.from('TORNEO_GROUP_TEAMS').delete().eq('group_id', srcGroupId).eq('team_id', teamId);
+      await supabase.from('TORNEO_GROUP_TEAMS').insert({ group_id: dstGroupId, team_id: teamId, played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 });
+      await Promise.all([
+        supabase.from('MATCH').delete().eq('group_id', srcGroupId),
+        supabase.from('MATCH').delete().eq('group_id', dstGroupId),
+      ]);
+      await Promise.all([
+        supabase.from('TORNEO_GROUP_TEAMS').update({ played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 }).eq('group_id', srcGroupId),
+        supabase.from('TORNEO_GROUP_TEAMS').update({ played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 }).eq('group_id', dstGroupId),
+      ]);
+      const [{ data: srcTeams }, { data: dstTeams }] = await Promise.all([
+        supabase.from('TORNEO_GROUP_TEAMS').select('team_id').eq('group_id', srcGroupId),
+        supabase.from('TORNEO_GROUP_TEAMS').select('team_id').eq('group_id', dstGroupId),
+      ]);
+      const toTeamObjs = (rows: any[]) => rows.map((r: any) => ({ id: r.team_id, name: '' }));
+      if (srcTeams && srcTeams.length >= 2) {
+        const rounds = generateRoundRobin(toTeamObjs(srcTeams));
+        const rows: any[] = [];
+        rounds.forEach((round, ri) => round.forEach(({ home, away }) =>
+          rows.push({ torneo_id: tournamentId, stage_id: stageId, group_id: srcGroupId, home_team_id: home.id, away_team_id: away.id, match_round: ri + 1, status: 'scheduled' })
+        ));
+        if (rows.length > 0) await supabase.from('MATCH').insert(rows);
+      }
+      if (dstTeams && dstTeams.length >= 2) {
+        const rounds = generateRoundRobin(toTeamObjs(dstTeams));
+        const rows: any[] = [];
+        rounds.forEach((round, ri) => round.forEach(({ home, away }) =>
+          rows.push({ torneo_id: tournamentId, stage_id: stageId, group_id: dstGroupId, home_team_id: home.id, away_team_id: away.id, match_round: ri + 1, status: 'scheduled' })
+        ));
+        if (rows.length > 0) await supabase.from('MATCH').insert(rows);
+      }
+      setMoveGroup(null); setMoveTeam(null); setMoveDest(null);
+      await loadFixture();
+    } catch (e: any) {
+      setError(e.message ?? 'Error al mover el equipo');
+    } finally {
+      setMoving(false);
+    }
   };
 
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]));
@@ -664,7 +717,17 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
                             });
                           return (
                             <div key={group.id}>
-                              <p style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: '0 0 8px' }}>{group.name}</p>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <p style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1.5, margin: 0 }}>{group.name}</p>
+                                {stageGroups.length > 1 && (
+                                  <button
+                                    onClick={() => { setMoveGroup(group); setMoveTeam(null); setMoveDest(null); }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 8, background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(37,99,235,0.2)', cursor: 'pointer', color: '#60a5fa', fontSize: 11, fontWeight: 700, fontFamily: fontStack }}
+                                  >
+                                    <ArrowLeftRight size={10} /> Mover equipo
+                                  </button>
+                                )}
+                              </div>
                               <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '18px 1fr 26px 24px 24px 24px 26px 26px 30px', gap: 0, padding: '6px 10px', background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                                   {['#', 'Equipo', 'PJ', 'G', 'E', 'P', 'GF', 'GC', 'Pts'].map((h, i) => (
@@ -828,6 +891,80 @@ export default function LlavesTab({ tournamentId, teams }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Move team modal ── */}
+      {moveGroup && (() => {
+        const srcGroupTeams = groupRows
+          .filter(r => r.group_id === moveGroup.id && r.team_id)
+          .map(r => ({ id: r.team_id!, name: teamMap[r.team_id ?? '']?.name ?? '—' }));
+        const siblingGroups = groups.filter(g => g.stage_id === moveGroup.stage_id && g.id !== moveGroup.id);
+        const step2 = moveTeam !== null;
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => { setMoveGroup(null); setMoveTeam(null); setMoveDest(null); }}>
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }} />
+            <div style={{ position: 'relative', background: '#0d1117', borderRadius: 20, padding: '24px 20px', border: '1px solid rgba(255,255,255,0.1)', maxWidth: 400, width: '100%', zIndex: 1, fontFamily: fontStack }} onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+                <div>
+                  <p style={{ fontSize: 16, fontWeight: 900, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 3px' }}>
+                    {step2 ? `Mover ${moveTeam.name}` : 'Mover equipo'}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>{moveGroup.name}</p>
+                </div>
+                <button onClick={() => { setMoveGroup(null); setMoveTeam(null); setMoveDest(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', display: 'flex', padding: 4 }}><X size={16} /></button>
+              </div>
+
+              {!step2 ? (
+                /* Step 1 — pick team */
+                <>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase', margin: '0 0 12px' }}>¿Qué equipo quieres mover?</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
+                    {srcGroupTeams.map(t => (
+                      <button key={t.id} onClick={() => { setMoveTeam(t); setMoveDest(null); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', cursor: 'pointer', fontFamily: fontStack, textAlign: 'left', transition: 'border-color 0.15s' }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(96,165,250,0.4)')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)')}
+                      >
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#60a5fa', flexShrink: 0 }} />
+                        <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3, flex: 1 }}>{t.name}</span>
+                        <ArrowLeftRight size={12} color="rgba(255,255,255,0.2)" />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                /* Step 2 — pick destination group */
+                <>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase', margin: '0 0 12px' }}>Mover a:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 18, maxHeight: 220, overflowY: 'auto' }}>
+                    {siblingGroups.map(g => {
+                      const sel = moveDest?.id === g.id;
+                      return (
+                        <button key={g.id} onClick={() => setMoveDest(g)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: fontStack, textAlign: 'left', background: sel ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.03)', border: `1px solid ${sel ? 'rgba(37,99,235,0.4)' : 'rgba(255,255,255,0.07)'}`, transition: 'all 0.15s' }}
+                        >
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: sel ? '#60a5fa' : '#22c55e', flexShrink: 0 }} />
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.3, flex: 1 }}>{g.name}</span>
+                          {sel && <span style={{ fontSize: 12, color: '#60a5fa' }}>✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => { setMoveTeam(null); setMoveDest(null); }} style={{ flex: 1, padding: '11px', borderRadius: 11, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', fontFamily: fontStack }}>Volver</button>
+                    <button onClick={handleMoveTeam} disabled={!moveDest || moving}
+                      style={{ flex: 2, padding: '11px', borderRadius: 11, background: moveDest ? 'linear-gradient(135deg, #1d4ed8, #2563eb)' : 'rgba(255,255,255,0.05)', border: 'none', cursor: moveDest && !moving ? 'pointer' : 'not-allowed', color: moveDest ? '#fff' : 'rgba(255,255,255,0.25)', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', fontFamily: fontStack, opacity: moving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {moving && <div style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: '_llspin 0.8s linear infinite' }} />}
+                      {moving ? 'Moviendo...' : 'Mover equipo'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Match info edit modal ── */}
       {editMatch && (() => {
